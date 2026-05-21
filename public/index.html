@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>爱背诵 - 智能背诵助手</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#4A90E2">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+</head>
+<body>
+    <!-- 首页 -->
+    <div id="home-page" class="page active">
+        <header class="header">
+            <div class="header-content">
+                <div class="logo">
+                    <span class="logo-icon">📚</span>
+                    <span class="logo-text">爱背诵</span>
+                </div>
+                <button class="settings-btn" onclick="toggleSettings()">⚙️</button>
+            </div>
+        </header>
+        
+        <main class="main-content">
+            <div class="welcome-section">
+                <div class="welcome-text">
+                    <h1>越背越爱，越学越懂</h1>
+                    <p>让小爱老师陪你一起高效背诵</p>
+                </div>
+                <div class="stats-card">
+                    <div class="stat-item">
+                        <span class="stat-value" id="today-count">0</span>
+                        <span class="stat-label">今日背诵</span>
+                    </div>
+                    <div class="stat-divider"></div>
+                    <div class="stat-item">
+                        <span class="stat-value" id="streak-days">0</span>
+                        <span class="stat-label">连续天数</span>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 复习提醒区域 -->
+            <div class="review-reminder hidden" id="review-reminder">
+                <div class="reminder-header">
+                    <span class="reminder-icon">📝</span>
+                    <span class="reminder-title">今日复习</span>
+                </div>
+                <div class="reminder-content" id="reminder-content"></div>
+                <button class="reminder-btn" onclick="startReview()">开始复习</button>
+            </div>
+            
+            <div class="action-section">
+                <h2>开始背诵</h2>
+                <div class="action-buttons">
+                    <button class="action-btn primary" onclick="showContentLibrary()">
+                        <span class="btn-icon">📖</span>
+                        <span class="btn-text">内容库</span>
+                    </button>
+                    <button class="action-btn secondary" onclick="showTextInput()">
+                        <span class="btn-icon">✏️</span>
+                        <span class="btn-text">自定义</span>
+                    </button>
+                    <button class="action-btn secondary" onclick="showImageInput()">
+                        <span class="btn-icon">📷</span>
+                        <span class="btn-text">拍照</span>
+                    </button>
+                </div>
+            </div>
+            
+            <div class="quick-section">
+                <h2>快速复习</h2>
+                <div class="quick-list" id="quick-review">
+                    <div class="quick-item" onclick="selectContent('poem-001')">
+                        <span class="quick-title">静夜思</span>
+                        <span class="quick-author">李白</span>
+                    </div>
+                    <div class="quick-item" onclick="selectContent('poem-002')">
+                        <span class="quick-title">春晓</span>
+                        <span class="quick-author">孟浩然</span>
+                    </div>
+                    <div class="quick-item" onclick="selectContent('poem-003')">
+                        <span class="quick-title">望庐山瀑布</span>
+                        <span class="quick-author">李白</span>
+                    </div>
+                </div>
+            </div>
+        </main>
+        
+        <nav class="bottom-nav">
+            <button class="nav-btn active" onclick="goHome()">
+                <span class="nav-icon">🏠</span>
+                <span class="nav-text">首页</span>
+            </button>
+            <button class="nav-btn" onclick="showContentLibrary()">
+                <span class="nav-icon">📚</span>
+                <span class="nav-text">内容</span>
+            </button>
+            <button class="nav-btn" onclick="showHistory()">
+                <span class="nav-icon">📊</span>
+                <span class="nav-text">记录</span>
+            </button>
+            <button class="nav-btn" onclick="showStats()">
+                <span class="nav-icon">📈</span>
+                <span class="nav-text">统计</span>
+            </button>
+        </nav>
+    </div>
+    
+    <!-- 内容库页面 -->
+    <div id="library-page" class="page">
+        <header class="header">
+            <button class="back-btn" onclick="goHome()">←</button>
+            <h1>内容库</h1>
+        </header>
+        <main class="main-content">
+            <div class="type-tabs">
+                <button class="type-tab active" data-type="all" onclick="filterByType('all')">全部</button>
+                <button class="type-tab" data-type="chinese" onclick="filterByType('chinese')">中文</button>
+                <button class="type-tab" data-type="english" onclick="filterByType('english')">英文</button>
+            </div>
+            <div class="search-bar">
+                <input type="text" placeholder="搜索内容..." id="search-input">
+                <button onclick="searchContent()">🔍</button>
+            </div>
+            <div class="content-list" id="content-list"></div>
+        </main>
+    </div>
+    
+    <!-- 文字输入页面 -->
+    <div id="text-input-page" class="page">
+        <header class="header">
+            <button class="back-btn" onclick="goHome()">←</button>
+            <h1>自定义内容</h1>
+        </header>
+        <main class="main-content">
+            <div class="input-section">
+                <textarea id="content-text" placeholder="请输入要背诵的内容...&#10;&#10;例如：&#10;床前明月光，疑是地上霜。&#10;举头望明月，低头思故乡。"></textarea>
+                <button class="primary-btn" onclick="previewContent()">预览内容</button>
+            </div>
+        </main>
+    </div>
+    
+    <!-- 图片输入页面 -->
+    <div id="image-input-page" class="page">
+        <header class="header">
+            <button class="back-btn" onclick="goHome()">←</button>
+            <h1>拍照识别</h1>
+        </header>
+        <main class="main-content">
+            <div class="image-upload-section">
+                <div class="upload-area" id="upload-area">
+                    <input type="file" id="image-input" accept="image/*" hidden>
+                    <div class="upload-placeholder">
+                        <span class="upload-icon">📷</span>
+                        <p>点击或拖拽上传图片</p>
+                    </div>
+                </div>
+                <div class="preview-area hidden" id="image-preview">
+                    <img id="preview-image" src="" alt="预览">
+                </div>
+                <button class="primary-btn hidden" id="recognize-btn" onclick="recognizeImage()">识别文字</button>
+            </div>
+        </main>
+    </div>
+    
+    <!-- 内容预览页面 -->
+    <div id="preview-page" class="page">
+        <header class="header">
+            <button class="back-btn" onclick="goBack()">←</button>
+            <h1 id="preview-title">内容预览</h1>
+        </header>
+        <main class="main-content">
+            <div class="preview-section">
+                <div class="content-preview" id="content-preview"></div>
+                
+                <div class="mode-selection">
+                    <h3>选择背诵模式</h3>
+                    <div class="mode-buttons">
+                        <button class="mode-btn selected" data-mode="repeat" onclick="selectMode('repeat')">
+                            <span>🗣️</span>
+                            <span>跟读模式</span>
+                        </button>
+                        <button class="mode-btn" data-mode="fill" onclick="selectMode('fill')">
+                            <span>✏️</span>
+                            <span>填空模式</span>
+                        </button>
+                        <button class="mode-btn" data-mode="hint" onclick="selectMode('hint')">
+                            <span>💡</span>
+                            <span>提示模式</span>
+                        </button>
+                        <button class="mode-btn" data-mode="full" onclick="selectMode('full')">
+                            <span>🎯</span>
+                            <span>完整背诵</span>
+                        </button>
+                    </div>
+                </div>
+                
+                <button class="start-btn" onclick="startRecitation()">开始背诵</button>
+            </div>
+        </main>
+    </div>
+    
+    <!-- 背诵页面 -->
+    <div id="recitation-page" class="page">
+        <header class="header">
+            <button class="back-btn" onclick="confirmExit()">←</button>
+            <h1 id="recitation-title">背诵中</h1>
+            <div class="progress-container">
+                <div class="progress-fill" id="progress-fill"></div>
+            </div>
+        </header>
+        
+        <main class="main-content recitation-main">
+            <div class="content-display" id="content-display"></div>
+            
+            <div class="voice-indicator" id="voice-indicator">
+                <div class="voice-waves">
+                    <span></span><span></span><span></span><span></span><span></span>
+                </div>
+                <div class="voice-text" id="voice-text">点击开始</div>
+            </div>
+            
+            <div class="control-buttons">
+                <button class="control-btn" onclick="repeatCurrent()">🔄 重读</button>
+                <button class="control-btn mic-btn" id="mic-btn" 
+                    onmousedown="startListening()" 
+                    onmouseup="stopListening()"
+                    ontouchstart="startListening()"
+                    ontouchend="stopListening()">
+                    🎤
+                </button>
+                <button class="control-btn" onclick="showHint()">💡 提示</button>
+                <button class="control-btn stop-btn" id="stop-btn" onclick="stopAll()">⏹️ 停止</button>
+            </div>
+        </main>
+    </div>
+    
+    <!-- 结果页面 -->
+    <div id="result-page" class="page">
+        <header class="header">
+            <h1>背诵结果</h1>
+        </header>
+        
+        <main class="main-content">
+            <div class="result-section">
+                <div class="score-display">
+                    <div class="score-circle">
+                        <span class="score-number" id="score-number">0</span>
+                        <span class="score-unit">分</span>
+                    </div>
+                    <div class="stars" id="stars">🌟🌟🌟</div>
+                    <div class="comment" id="result-comment">非常棒！</div>
+                </div>
+                
+                <div class="detail-stats">
+                    <div class="detail-item">
+                        <span class="detail-label">准确率</span>
+                        <div class="detail-bar">
+                            <div class="bar-fill" id="accuracy-bar"></div>
+                        </div>
+                        <span class="detail-value" id="accuracy-value">0%</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="detail-label">完整度</span>
+                        <div class="detail-bar">
+                            <div class="bar-fill" id="completeness-bar"></div>
+                        </div>
+                        <span class="detail-value" id="completeness-value">0%</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="detail-label">流畅度</span>
+                        <div class="detail-bar">
+                            <div class="bar-fill" id="fluency-bar"></div>
+                        </div>
+                        <span class="detail-value" id="fluency-value">0%</span>
+                    </div>
+                </div>
+                
+                <div class="error-analysis">
+                    <h3>错误分析</h3>
+                    <div class="error-list" id="error-list"></div>
+                </div>
+                
+                <div class="result-actions">
+                    <button class="action-btn secondary" onclick="retryRecitation()">再来一次</button>
+                    <button class="action-btn primary" onclick="saveResult()">完成</button>
+                </div>
+            </div>
+        </main>
+    </div>
+    
+    <!-- 历史记录页面 -->
+    <div id="history-page" class="page">
+        <header class="header">
+            <button class="back-btn" onclick="goHome()">←</button>
+            <h1>学习记录</h1>
+        </header>
+        <main class="main-content">
+            <div class="history-stats">
+                <div class="history-stat">
+                    <span class="stat-value" id="total-count">0</span>
+                    <span class="stat-label">总次数</span>
+                </div>
+                <div class="history-stat">
+                    <span class="stat-value" id="avg-score">0</span>
+                    <span class="stat-label">平均分</span>
+                </div>
+                <div class="history-stat">
+                    <span class="stat-value" id="streak-days">0</span>
+                    <span class="stat-label">连续天数</span>
+                </div>
+            </div>
+            <div class="history-list" id="history-items"></div>
+        </main>
+    </div>
+    
+    <!-- 设置弹窗 -->
+    <div id="settings-modal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>设置</h2>
+                <button class="close-btn" onclick="closeSettings()">×</button>
+            </div>
+            <div class="modal-body">
+                <div class="setting-item">
+                    <label>语音速度</label>
+                    <div class="range-container">
+                        <input type="range" id="speech-rate" min="0.5" max="1.5" step="0.1" value="0.9">
+                        <span id="rate-value">0.9</span>
+                    </div>
+                </div>
+                <div class="setting-item">
+                    <label>语音音量</label>
+                    <div class="range-container">
+                        <input type="range" id="speech-volume" min="0" max="1" step="0.1" value="1">
+                        <span id="volume-value">100%</span>
+                    </div>
+                </div>
+                <div class="setting-item">
+                    <label>自动下一句</label>
+                    <input type="checkbox" id="auto-next" checked>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 退出确认弹窗 -->
+    <div id="exit-modal" class="modal hidden">
+        <div class="modal-content small">
+            <p>确定要退出背诵吗？</p>
+            <div class="modal-actions">
+                <button class="action-btn secondary" onclick="closeExitModal()">继续背诵</button>
+                <button class="action-btn primary" onclick="confirmExitRecitation()">退出</button>
+            </div>
+        </main>
+    </div>
+    
+    <!-- 数据统计页面 -->
+    <div id="stats-page" class="page">
+        <header class="header">
+            <button class="back-btn" onclick="goHome()">←</button>
+            <h1>学习统计</h1>
+        </header>
+        <main class="main-content">
+            <div class="stats-overview">
+                <div class="overview-card">
+                    <div class="overview-icon">📚</div>
+                    <div class="overview-value" id="stats-total-sessions">0</div>
+                    <div class="overview-label">总背诵次数</div>
+                </div>
+                <div class="overview-card">
+                    <div class="overview-icon">⭐</div>
+                    <div class="overview-value" id="stats-avg-score">0</div>
+                    <div class="overview-label">平均得分</div>
+                </div>
+                <div class="overview-card">
+                    <div class="overview-icon">🔥</div>
+                    <div class="overview-value" id="stats-streak">0</div>
+                    <div class="overview-label">连续天数</div>
+                </div>
+                <div class="overview-card">
+                    <div class="overview-icon">🏆</div>
+                    <div class="overview-value" id="stats-mastered">0</div>
+                    <div class="overview-label">已掌握</div>
+                </div>
+            </div>
+            
+            <div class="stats-chart" id="weekly-chart">
+                <h3>本周学习趋势</h3>
+                <div class="chart-placeholder" id="chart-placeholder">
+                    <p>本周数据加载中...</p>
+                </div>
+            </div>
+            
+            <div class="stats-details">
+                <h3>内容掌握情况</h3>
+                <div class="mastery-list" id="mastery-list">
+                    <p style="text-align: center; color: var(--text-secondary);">暂无数据</p>
+                </div>
+            </div>
+        </main>
+    </div>
+    
+    <script src="app.js"></script>
+</body>
+</html>
