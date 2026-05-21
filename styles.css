@@ -8,9 +8,13 @@
 :root {
     --primary-color: #4A90E2;
     --primary-dark: #3A7BC8;
+    --primary-light: #E8F0FE;
     --secondary-color: #FF6B35;
     --success-color: #7ED321;
+    --success-light: #E8F8D4;
     --error-color: #FF6B6B;
+    --error-light: #FFE0E0;
+    --warning-color: #F5A623;
     --bg-color: #F5F7FA;
     --card-bg: #FFFFFF;
     --text-primary: #2C3E50;
@@ -20,6 +24,7 @@
     --shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.15);
     --radius: 12px;
     --radius-sm: 8px;
+    --transition: all 0.3s ease;
 }
 
 body {
@@ -106,7 +111,7 @@ body {
     border-radius: var(--radius);
     box-shadow: var(--shadow);
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: var(--transition);
     text-align: left;
 }
 
@@ -257,7 +262,7 @@ body {
     font-size: 16px;
     font-weight: 600;
     cursor: pointer;
-    transition: all 0.2s;
+    transition: var(--transition);
 }
 
 .primary-btn:hover {
@@ -277,7 +282,7 @@ body {
     font-size: 14px;
     font-weight: 500;
     cursor: pointer;
-    transition: all 0.2s;
+    transition: var(--transition);
 }
 
 .secondary-btn:hover {
@@ -291,7 +296,7 @@ body {
     padding: 48px 24px;
     text-align: center;
     cursor: pointer;
-    transition: all 0.2s;
+    transition: var(--transition);
     background: var(--card-bg);
 }
 
@@ -392,7 +397,7 @@ body {
     border: 2px solid var(--border-color);
     border-radius: var(--radius-sm);
     cursor: pointer;
-    transition: all 0.2s;
+    transition: var(--transition);
 }
 
 .mode-btn:hover {
@@ -421,61 +426,157 @@ body {
     margin-top: 4px;
 }
 
-/* 背诵页面 */
-.progress-bar {
-    height: 4px;
-    background: var(--border-color);
-    border-radius: 2px;
+/* ==================== 背诵页面（优化） ==================== */
+
+/* 进度区域 */
+.progress-section {
     margin-bottom: 20px;
+}
+
+.progress-info {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+
+#sentence-counter {
+    font-weight: 500;
+}
+
+#progress-percent {
+    font-weight: 600;
+    color: var(--primary-color);
+}
+
+.progress-bar {
+    height: 6px;
+    background: var(--border-color);
+    border-radius: 3px;
     overflow: hidden;
 }
 
 .progress-fill {
     height: 100%;
-    background: var(--primary-color);
-    border-radius: 2px;
-    transition: width 0.3s ease;
+    background: linear-gradient(90deg, var(--primary-color), #5BA3F5);
+    border-radius: 3px;
+    transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);
     width: 0%;
 }
 
+/* 内容展示区 */
 .content-display {
     background: var(--card-bg);
-    padding: 24px;
+    padding: 20px;
     border-radius: var(--radius);
-    margin-bottom: 24px;
+    margin-bottom: 20px;
     box-shadow: var(--shadow);
-    min-height: 200px;
+    min-height: 180px;
+    max-height: 40vh;
+    overflow-y: auto;
 }
 
 .sentence-item {
-    padding: 16px;
-    margin-bottom: 12px;
+    padding: 14px 16px;
+    margin-bottom: 10px;
     background: var(--bg-color);
     border-radius: var(--radius-sm);
     font-size: 18px;
     line-height: 1.8;
-    transition: all 0.3s;
+    transition: var(--transition);
+    border-left: 4px solid transparent;
 }
 
+.sentence-item:last-child {
+    margin-bottom: 0;
+}
+
+/* 当前句 - 突出高亮 */
 .sentence-item.current {
-    background: rgba(74, 144, 226, 0.15);
+    background: var(--primary-light);
     border-left: 4px solid var(--primary-color);
+    font-weight: 500;
+    transform: scale(1.02);
+    box-shadow: 0 2px 8px rgba(74, 144, 226, 0.2);
 }
 
+/* 已完成 - 正确 */
 .sentence-item.completed {
-    background: rgba(126, 211, 33, 0.1);
+    background: var(--success-light);
     border-left: 4px solid var(--success-color);
+    opacity: 0.85;
 }
 
+/* 已完成 - 错误 */
 .sentence-item.error {
-    background: rgba(255, 107, 107, 0.1);
+    background: var(--error-light);
     border-left: 4px solid var(--error-color);
+    opacity: 0.85;
 }
 
-/* 语音指示器 */
+/* 折叠的句子 - 减少视觉干扰 */
+.sentence-item.collapsed {
+    font-size: 14px;
+    opacity: 0.4;
+    padding: 8px 16px;
+    margin-bottom: 6px;
+    line-height: 1.4;
+}
+
+/* 实时语音识别结果 */
+.speech-result {
+    background: var(--card-bg);
+    border: 2px solid var(--primary-color);
+    border-radius: var(--radius-sm);
+    padding: 14px 16px;
+    margin-bottom: 16px;
+    animation: slideUp 0.3s ease;
+    box-shadow: 0 2px 8px rgba(74, 144, 226, 0.15);
+}
+
+.speech-result-label {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-bottom: 6px;
+}
+
+.speech-result-text {
+    font-size: 16px;
+    color: var(--text-primary);
+    min-height: 24px;
+    line-height: 1.5;
+}
+
+.speech-result-text.final {
+    color: var(--primary-dark);
+    font-weight: 500;
+}
+
+/* 语音状态指示器 */
 .voice-indicator {
     text-align: center;
-    margin-bottom: 24px;
+    margin-bottom: 20px;
+    padding: 12px;
+    border-radius: var(--radius-sm);
+    transition: var(--transition);
+}
+
+.voice-indicator.state-speaking {
+    background: rgba(74, 144, 226, 0.08);
+}
+
+.voice-indicator.state-listening {
+    background: rgba(126, 211, 33, 0.08);
+}
+
+.voice-indicator.state-waiting {
+    background: rgba(245, 166, 35, 0.08);
+}
+
+.voice-indicator.state-paused {
+    background: rgba(127, 140, 141, 0.08);
 }
 
 .voice-waves {
@@ -483,37 +584,88 @@ body {
     justify-content: center;
     align-items: center;
     gap: 4px;
-    height: 40px;
-    margin-bottom: 12px;
+    height: 36px;
+    margin-bottom: 8px;
 }
 
 .voice-waves span {
     width: 4px;
-    height: 20px;
-    background: var(--primary-color);
+    height: 16px;
+    background: var(--border-color);
     border-radius: 2px;
-    animation: wave 1s ease-in-out infinite;
+    transition: var(--transition);
 }
 
-.voice-waves span:nth-child(1) { animation-delay: 0s; }
-.voice-waves span:nth-child(2) { animation-delay: 0.1s; }
-.voice-waves span:nth-child(3) { animation-delay: 0.2s; }
-.voice-waves span:nth-child(4) { animation-delay: 0.3s; }
-.voice-waves span:nth-child(5) { animation-delay: 0.4s; }
-
-@keyframes wave {
-    0%, 100% { height: 20px; opacity: 0.5; }
-    50% { height: 40px; opacity: 1; }
+/* 默认 idle 状态 - 静止 */
+.voice-waves span {
+    animation: none;
+    height: 16px;
+    opacity: 0.4;
 }
 
+/* speaking 状态 - 蓝色缓慢波动 */
+.voice-waves.speaking span {
+    background: var(--primary-color);
+    animation: waveSpeaking 1.2s ease-in-out infinite;
+}
+
+.voice-waves.speaking span:nth-child(1) { animation-delay: 0s; }
+.voice-waves.speaking span:nth-child(2) { animation-delay: 0.15s; }
+.voice-waves.speaking span:nth-child(3) { animation-delay: 0.3s; }
+.voice-waves.speaking span:nth-child(4) { animation-delay: 0.45s; }
+.voice-waves.speaking span:nth-child(5) { animation-delay: 0.6s; }
+
+@keyframes waveSpeaking {
+    0%, 100% { height: 16px; opacity: 0.5; }
+    50% { height: 32px; opacity: 1; }
+}
+
+/* listening 状态 - 绿色快速跳动 */
 .voice-waves.listening span {
     background: var(--success-color);
-    animation-duration: 0.5s;
+    animation: waveListening 0.5s ease-in-out infinite;
+}
+
+.voice-waves.listening span:nth-child(1) { animation-delay: 0s; }
+.voice-waves.listening span:nth-child(2) { animation-delay: 0.08s; }
+.voice-waves.listening span:nth-child(3) { animation-delay: 0.16s; }
+.voice-waves.listening span:nth-child(4) { animation-delay: 0.24s; }
+.voice-waves.listening span:nth-child(5) { animation-delay: 0.32s; }
+
+@keyframes waveListening {
+    0%, 100% { height: 12px; opacity: 0.4; }
+    50% { height: 36px; opacity: 1; }
+}
+
+/* waiting 状态 - 橙色缓慢呼吸 */
+.voice-waves.waiting span {
+    background: var(--warning-color);
+    animation: waveWaiting 2s ease-in-out infinite;
+}
+
+.voice-waves.waiting span:nth-child(1) { animation-delay: 0s; }
+.voice-waves.waiting span:nth-child(2) { animation-delay: 0.2s; }
+.voice-waves.waiting span:nth-child(3) { animation-delay: 0.4s; }
+.voice-waves.waiting span:nth-child(4) { animation-delay: 0.6s; }
+.voice-waves.waiting span:nth-child(5) { animation-delay: 0.8s; }
+
+@keyframes waveWaiting {
+    0%, 100% { height: 12px; opacity: 0.3; }
+    50% { height: 20px; opacity: 0.7; }
+}
+
+/* paused 状态 - 灰色静止 */
+.voice-waves.paused span {
+    background: var(--text-secondary);
+    animation: none;
+    height: 12px;
+    opacity: 0.3;
 }
 
 #voice-text {
     font-size: 14px;
     color: var(--text-secondary);
+    transition: var(--transition);
 }
 
 /* 麦克风按钮 */
@@ -531,8 +683,11 @@ body {
     color: white;
     font-size: 32px;
     cursor: pointer;
-    transition: all 0.2s;
+    transition: var(--transition);
     box-shadow: 0 4px 12px rgba(74, 144, 226, 0.4);
+    position: relative;
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
 }
 
 .mic-btn:hover {
@@ -546,28 +701,103 @@ body {
 
 .mic-btn.listening {
     background: var(--success-color);
-    animation: pulse 1s infinite;
+    box-shadow: 0 4px 12px rgba(126, 211, 33, 0.4);
+    animation: micPulse 1.2s infinite;
 }
 
-@keyframes pulse {
+@keyframes micPulse {
     0% { box-shadow: 0 0 0 0 rgba(126, 211, 33, 0.4); }
     70% { box-shadow: 0 0 0 20px rgba(126, 211, 33, 0); }
     100% { box-shadow: 0 0 0 0 rgba(126, 211, 33, 0); }
 }
 
 .mic-hint {
-    margin-top: 12px;
-    font-size: 14px;
+    margin-top: 10px;
+    font-size: 13px;
     color: var(--text-secondary);
+    transition: var(--transition);
 }
 
+/* 控制按钮组 - 优化布局 */
 .control-buttons {
     display: flex;
     justify-content: center;
-    gap: 12px;
+    gap: 10px;
 }
 
-/* 结果页面 */
+.ctrl-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 12px 16px;
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: var(--transition);
+    min-width: 64px;
+    box-shadow: var(--shadow);
+}
+
+.ctrl-btn:hover {
+    border-color: var(--primary-color);
+    background: var(--primary-light);
+}
+
+.ctrl-btn:active {
+    transform: scale(0.95);
+}
+
+.ctrl-btn.active {
+    border-color: var(--warning-color);
+    background: rgba(245, 166, 35, 0.1);
+}
+
+.ctrl-icon {
+    font-size: 20px;
+}
+
+.ctrl-label {
+    font-size: 12px;
+    color: var(--text-secondary);
+    font-weight: 500;
+}
+
+/* 填空模式样式 */
+.fill-blank {
+    display: inline-block;
+    min-width: 60px;
+    border-bottom: 2px dashed var(--primary-color);
+    padding: 0 4px;
+    text-align: center;
+    color: var(--text-secondary);
+    font-style: italic;
+    transition: var(--transition);
+}
+
+.fill-blank.revealed {
+    border-bottom-style: solid;
+    color: var(--primary-color);
+    font-style: normal;
+    font-weight: 500;
+    background: rgba(74, 144, 226, 0.08);
+    border-radius: 4px;
+    padding: 2px 6px;
+}
+
+/* 提示模式样式 */
+.hint-text {
+    color: var(--secondary-color);
+    font-weight: 600;
+}
+
+.hint-hidden {
+    color: var(--border-color);
+    letter-spacing: 2px;
+}
+
+/* ==================== 结果页面 ==================== */
 .result-card {
     background: var(--card-bg);
     padding: 32px 24px;
@@ -659,7 +889,7 @@ body {
     height: 100%;
     background: var(--primary-color);
     border-radius: 4px;
-    transition: width 0.5s ease;
+    transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1);
     width: 0%;
 }
 
@@ -688,10 +918,11 @@ body {
 
 .error-item {
     padding: 12px;
-    background: rgba(255, 107, 107, 0.1);
+    background: var(--error-light);
     border-radius: var(--radius-sm);
     margin-bottom: 8px;
     font-size: 14px;
+    border-left: 3px solid var(--error-color);
 }
 
 .error-item .expected {
@@ -713,7 +944,7 @@ body {
     flex: 1;
 }
 
-/* 历史记录页面 */
+/* ==================== 历史记录页面 ==================== */
 .stats-cards {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
@@ -814,7 +1045,7 @@ body {
     color: var(--primary-color);
 }
 
-/* 弹窗 */
+/* ==================== 弹窗 ==================== */
 .modal {
     position: fixed;
     top: 0;
@@ -962,7 +1193,7 @@ input:checked + .slider:before {
     transform: translateX(24px);
 }
 
-/* 响应式 */
+/* ==================== 响应式 ==================== */
 @media (max-width: 480px) {
     #app {
         max-width: 100%;
@@ -975,9 +1206,26 @@ input:checked + .slider:before {
     .stats-cards {
         grid-template-columns: 1fr;
     }
+    
+    .control-buttons {
+        gap: 6px;
+    }
+    
+    .ctrl-btn {
+        padding: 10px 12px;
+        min-width: 56px;
+    }
+    
+    .ctrl-icon {
+        font-size: 18px;
+    }
+    
+    .ctrl-label {
+        font-size: 11px;
+    }
 }
 
-/* 动画 */
+/* ==================== 动画 ==================== */
 .fade-in {
     animation: fadeIn 0.3s ease;
 }
@@ -991,16 +1239,20 @@ input:checked + .slider:before {
     to { opacity: 1; transform: translateY(0); }
 }
 
-/* 提示词样式 */
-.hint-text {
-    color: var(--secondary-color);
-    font-weight: 600;
+/* 内容区域滚动条美化 */
+.content-display::-webkit-scrollbar {
+    width: 4px;
 }
 
-.fill-blank {
-    display: inline-block;
-    min-width: 60px;
-    border-bottom: 2px solid var(--primary-color);
-    margin: 0 4px;
-    text-align: center;
+.content-display::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.content-display::-webkit-scrollbar-thumb {
+    background: var(--border-color);
+    border-radius: 2px;
+}
+
+.content-display::-webkit-scrollbar-thumb:hover {
+    background: var(--text-secondary);
 }

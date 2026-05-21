@@ -1,26 +1,14 @@
 /**
- * 爱背诵 - 前端应用
- * 与后端API对接版本
+ * 智能背诵助手 - 核心应用逻辑（优化版）
  */
-
-// ==================== 配置 ====================
-const API_BASE = window.location.origin + '/api/v1';
-const WS_BASE = window.location.origin.replace('http', 'ws') + '/ws';
 
 // ==================== 全局状态 ====================
 const AppState = {
-    user: null,
-    token: null,
     currentPage: 'home',
     content: {
-        id: null,
         title: '',
         text: '',
         sentences: []
-    },
-    session: {
-        id: null,
-        type: 'new_learning'
     },
     settings: {
         speechRate: 0.9,
@@ -28,14 +16,19 @@ const AppState = {
         autoNext: true
     },
     recitation: {
-        mode: 'repeat',
+        mode: 'repeat',       // repeat, fill, hint, full
         currentIndex: 0,
         results: [],
         isListening: false,
-        isSpeaking: false
+        isSpeaking: false,
+        isPaused: false,       // 新增：暂停状态
+        hintLevel: 0,          // 新增：当前提示等级（渐进提示）
+        retryCount: 0,         // 新增：当前句子重试次数
+        maxRetries: 3          // 新增：最大重试次数
     },
     history: {
         records: [],
+        achievements: [],
         stats: {
             totalCount: 0,
             avgScore: 0,
@@ -45,316 +38,59 @@ const AppState = {
     }
 };
 
-// ==================== API 请求封装 ====================
-async function apiRequest(endpoint, options = {}) {
-    const url = API_BASE + endpoint;
-    const headers = {
-        'Content-Type': 'application/json',
-        ...options.headers
-    };
-    
-    if (AppState.token) {
-        headers['Authorization'] = `Bearer ${AppState.token}`;
-    }
-    
-    try {
-        const response = await fetch(url, {
-            ...options,
-            headers
-        });
-        
-        const data = await response.json();
-        
-        if (!response.ok) {
-            throw new Error(data.error || '请求失败');
-        }
-        
-        return data;
-    } catch (err) {
-        console.error('API请求错误:', err);
-        throw err;
-    }
-}
-
-// ==================== 认证服务 ====================
-const AuthService = {
-    async guestLogin() {
-        const res = await apiRequest('/auth/guest', { method: 'POST' });
-        AppState.user = res.data.user;
-        AppState.token = res.data.token;
-        this.saveAuth();
-        return res.data;
-    },
-    
-    async login(phone, password) {
-        const res = await apiRequest('/auth/login', {
-            method: 'POST',
-            body: JSON.stringify({ phone, password })
-        });
-        AppState.user = res.data.user;
-        AppState.token = res.data.token;
-        this.saveAuth();
-        return res.data;
-    },
-    
-    async register(phone, password, nickname) {
-        const res = await apiRequest('/auth/register', {
-            method: 'POST',
-            body: JSON.stringify({ phone, password, nickname })
-        });
-        AppState.user = res.data.user;
-        AppState.token = res.data.token;
-        this.saveAuth();
-        return res.data;
-    },
-    
-    saveAuth() {
-        localStorage.setItem('ai_recite_auth', JSON.stringify({
-            user: AppState.user,
-            token: AppState.token
-        }));
-    },
-    
-    loadAuth() {
-        const saved = localStorage.getItem('ai_recite_auth');
-        if (saved) {
-            const { user, token } = JSON.parse(saved);
-            AppState.user = user;
-            AppState.token = token;
-            return true;
-        }
-        return false;
-    },
-    
-    logout() {
-        AppState.user = null;
-        AppState.token = null;
-        localStorage.removeItem('ai_recite_auth');
-    }
-};
-
-// ==================== 内容服务 ====================
-const ContentService = {
-    async getList(params = {}) {
-        const query = new URLSearchParams(params).toString();
-        return apiRequest(`/contents?${query}`);
-    },
-    
-    async getById(id) {
-        return apiRequest(`/contents/${id}`);
-    },
-    
-    async getRecommended() {
-        return apiRequest('/contents/recommended/list');
-    },
-    
-    async search(q) {
-        return apiRequest(`/contents/search/query?q=${encodeURIComponent(q)}`);
-    },
-    
-    async create(data) {
-        return apiRequest('/contents', {
-            method: 'POST',
-            body: JSON.stringify(data)
-        });
-    }
-};
-
-// ==================== 会话服务 ====================
-const SessionService = {
-    async create(contentId, type = 'new_learning') {
-        return apiRequest('/sessions', {
-            method: 'POST',
-            body: JSON.stringify({ content_id: contentId, session_type: type })
-        });
-    },
-    
-    async get(sessionId) {
-        return apiRequest(`/sessions/${sessionId}`);
-    },
-    
-    async recite(sessionId, data) {
-        return apiRequest(`/sessions/${sessionId}/recite`, {
-            method: 'POST',
-            body: JSON.stringify(data)
-        });
-    },
-    
-    async end(sessionId) {
-        return apiRequest(`/sessions/${sessionId}/end`, {
-            method: 'PUT'
-        });
-    }
-};
-
-// ==================== 教师服务 ====================
-const TeacherService = {
-    async chat(message, context = []) {
-        return apiRequest('/teacher/chat', {
-            method: 'POST',
-            body: JSON.stringify({ message, context })
-        });
-    },
-    
-    async explain(contentId, part = null) {
-        return apiRequest('/teacher/explain', {
-            method: 'POST',
-            body: JSON.stringify({ content_id: contentId, part })
-        });
-    },
-    
-    async getHint(standardText, userInput, level = 1) {
-        return apiRequest('/teacher/hint', {
-            method: 'POST',
-            body: JSON.stringify({ 
-                standard_text: standardText, 
-                user_input: userInput, 
-                hint_level: level 
-            })
-        });
-    }
-};
-
-// ==================== 复习服务 ====================
-const ReviewService = {
-    async getToday() {
-        return apiRequest('/reviews/today');
-    },
-    
-    async getSchedule(days = 7) {
-        return apiRequest(`/reviews/schedule?days=${days}`);
-    },
-    
-    async complete(masteryId, score) {
-        return apiRequest(`/reviews/${masteryId}/complete`, {
-            method: 'POST',
-            body: JSON.stringify({ score })
-        });
-    },
-    
-    async getMistakes() {
-        return apiRequest('/reviews/mistakes');
-    }
-};
-
-// ==================== 用户服务 ====================
-const UserService = {
-    async getProfile() {
-        return apiRequest('/users/profile');
-    },
-    
-    async updateProfile(data) {
-        return apiRequest('/users/profile', {
-            method: 'PUT',
-            body: JSON.stringify(data)
-        });
-    },
-    
-    async getStats() {
-        return apiRequest('/users/stats');
-    },
-    
-    async getHistory(limit = 20) {
-        return apiRequest(`/users/history?limit=${limit}`);
-    }
-};
-
 // ==================== 语音合成 ====================
 class SpeechSynthesizer {
     constructor() {
         this.synth = window.speechSynthesis;
         this.voice = null;
-        this.voices = [];
         this.init();
     }
-    
+
     init() {
         if (this.synth.onvoiceschanged !== undefined) {
-            this.synth.onvoiceschanged = () => {
-                this.voices = this.synth.getVoices();
-                this.setVoice();
-            };
+            this.synth.onvoiceschanged = () => this.setVoice();
         }
-        // 尝试立即获取
-        this.voices = this.synth.getVoices();
         this.setVoice();
     }
-    
-    setVoice(isEnglish = false) {
-        if (this.voices.length === 0) {
-            this.voice = null;
-            return;
-        }
-        
-        if (isEnglish) {
-            // 英文内容使用英文语音
-            this.voice = this.voices.find(v => v.lang.includes('en') && v.name.includes('Female')) ||
-                        this.voices.find(v => v.lang.includes('en')) ||
-                        this.voices[0];
-        } else {
-            // 中文内容使用中文语音
-            this.voice = this.voices.find(v => v.lang.includes('zh') && v.name.includes('Female')) ||
-                         this.voices.find(v => v.lang.includes('zh')) ||
-                         this.voices[0];
-        }
+
+    setVoice() {
+        const voices = this.synth.getVoices();
+        this.voice = voices.find(v => v.lang.includes('zh') && v.name.includes('Female')) ||
+                     voices.find(v => v.lang.includes('zh')) ||
+                     voices[0];
     }
-    
-    speak(text, onEnd = null, isEnglish = false) {
-        if (!this.synth) {
-            console.warn('语音合成不可用');
-            if (onEnd) onEnd();
-            return;
-        }
-        
-        // 停止之前的语音
+
+    speak(text, onEnd = null) {
+        if (!this.synth) return;
+
         this.synth.cancel();
-        
-        // 根据语言设置选择语音
-        if (isEnglish) {
-            this.setVoice(true);
-        } else {
-            this.setVoice(false);
-        }
-        
+
         const utterance = new SpeechSynthesisUtterance(text);
-        
-        if (this.voice) {
-            utterance.voice = this.voice;
-        }
-        
+        utterance.voice = this.voice;
         utterance.rate = AppState.settings.speechRate;
         utterance.volume = AppState.settings.speechVolume;
         utterance.pitch = 1.1;
-        
+
         AppState.recitation.isSpeaking = true;
         updateVoiceIndicator('speaking', text);
-        
+
         utterance.onend = () => {
             AppState.recitation.isSpeaking = false;
-            updateVoiceIndicator('idle');
+            if (!AppState.recitation.isPaused) {
+                updateVoiceIndicator('waiting');
+            }
             if (onEnd) onEnd();
         };
-        
+
         utterance.onerror = (e) => {
-            console.warn('语音合成错误 (已忽略):', e.error);
+            console.error('语音合成错误:', e);
             AppState.recitation.isSpeaking = false;
             updateVoiceIndicator('idle');
-            if (onEnd) onEnd();
         };
-        
-        // 延迟一小段时间确保.cancel()生效
-        setTimeout(() => {
-            try {
-                this.synth.speak(utterance);
-            } catch (e) {
-                console.warn('语音合成启动失败:', e);
-                AppState.recitation.isSpeaking = false;
-                updateVoiceIndicator('idle');
-                if (onEnd) onEnd();
-            }
-        }, 50);
+
+        this.synth.speak(utterance);
     }
-    
+
     stop() {
         if (this.synth) {
             this.synth.cancel();
@@ -369,56 +105,31 @@ const speechSynthesizer = new SpeechSynthesizer();
 class SpeechRecognizer {
     constructor() {
         this.recognition = null;
-        this.isEnglish = false;
         this.init();
     }
-    
+
     init() {
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
         if (!SpeechRecognition) {
             console.warn('浏览器不支持语音识别');
             return;
         }
-        
+
         this.recognition = new SpeechRecognition();
+        this.recognition.lang = 'zh-CN';
         this.recognition.continuous = false;
         this.recognition.interimResults = true;
         this.recognition.maxAlternatives = 1;
     }
-    
-    setLanguage(isEnglish = false) {
-        this.isEnglish = isEnglish;
-        if (this.recognition) {
-            this.recognition.lang = isEnglish ? 'en-US' : 'zh-CN';
-        }
-    }
-    
+
     start(onResult, onEnd, onError) {
-        // 如果已经在运行，先停止
-        if (this.recognition && AppState.recitation.isListening) {
-            try {
-                this.recognition.stop();
-            } catch (e) {
-                // 忽略已停止的错误
-            }
-        }
-        
         if (!this.recognition) {
             simulateSpeechRecognition(onResult, onEnd);
             return;
         }
-        
-        // 设置语言
-        this.setLanguage(AppState.content.type?.startsWith('english'));
-        
+
         let finalTranscript = '';
-        const self = this;
-        
-        // 清理之前的事件处理器
-        this.recognition.onresult = null;
-        this.recognition.onend = null;
-        this.recognition.onerror = null;
-        
+
         this.recognition.onresult = (event) => {
             let interimTranscript = '';
             for (let i = event.resultIndex; i < event.results.length; i++) {
@@ -429,52 +140,33 @@ class SpeechRecognizer {
                     interimTranscript += transcript;
                 }
             }
+            // 实时更新识别文字
+            updateSpeechResult(finalTranscript || interimTranscript, !!finalTranscript);
             if (onResult) onResult(finalTranscript || interimTranscript, !!finalTranscript);
         };
-        
+
         this.recognition.onend = () => {
-            recognitionActive = false;
             AppState.recitation.isListening = false;
             updateMicButton(false);
             if (onEnd) onEnd(finalTranscript);
         };
-        
+
         this.recognition.onerror = (e) => {
-            // 忽略常见的非严重错误
-            if (e.error === 'no-speech' || e.error === 'aborted') {
-                console.log('语音识别被中止或无语音输入');
-            } else if (e.error === 'not-allowed') {
-                console.warn('语音识别被浏览器阻止，请允许麦克风权限');
-            } else {
-                console.warn('语音识别错误 (已忽略):', e.error);
-            }
-            recognitionActive = false;
+            console.error('语音识别错误:', e);
             AppState.recitation.isListening = false;
             updateMicButton(false);
-            if (onEnd) onEnd(finalTranscript);
+            if (onError) onError(e);
         };
-        
+
         AppState.recitation.isListening = true;
         updateMicButton(true);
-        
-        try {
-            this.recognition.start();
-        } catch (e) {
-            console.error('启动识别失败:', e);
-            AppState.recitation.isListening = false;
-            updateMicButton(false);
-        }
+        this.recognition.start();
     }
-    
+
     stop() {
         if (this.recognition) {
-            try {
-                this.recognition.stop();
-            } catch (e) {
-                // 忽略已停止的错误
-            }
+            this.recognition.stop();
         }
-        recognitionActive = false;
         AppState.recitation.isListening = false;
         updateMicButton(false);
     }
@@ -482,6 +174,7 @@ class SpeechRecognizer {
 
 const speechRecognizer = new SpeechRecognizer();
 
+// 模拟语音识别（测试用）
 function simulateSpeechRecognition(onResult, onEnd) {
     AppState.recitation.isListening = true;
     updateMicButton(true);
@@ -491,6 +184,7 @@ function simulateSpeechRecognition(onResult, onEnd) {
         const isCorrect = Math.random() > 0.3;
         const result = isCorrect ? currentSentence : currentSentence.slice(0, -2);
         
+        updateSpeechResult(result, true);
         if (onResult) onResult(result, true);
         
         setTimeout(() => {
@@ -518,30 +212,18 @@ function goHome() {
     speechSynthesizer.stop();
     speechRecognizer.stop();
     showPage('home');
-    loadHomeData();
+    updateHomeStats();
 }
 
 function goBack() {
     if (AppState.currentPage === 'preview') {
-        showPage('text');
-    } else if (AppState.currentPage === 'recitation') {
-        confirmExit();
+        showPage('text-input');
     } else {
         goHome();
     }
 }
 
 // ==================== 首页功能 ====================
-async function loadHomeData() {
-    try {
-        const statsRes = await UserService.getStats();
-        AppState.history.stats = statsRes.data;
-        document.getElementById('today-count').textContent = statsRes.data.todaySessions || 0;
-    } catch (err) {
-        console.error('加载首页数据失败:', err);
-    }
-}
-
 function showTextInput() {
     showPage('text-input');
 }
@@ -551,107 +233,23 @@ function showImageInput() {
     initImageUpload();
 }
 
-async function showHistory() {
+function showHistory() {
     showPage('history');
-    await renderHistory();
+    renderHistory();
 }
 
-async function showContentLibrary() {
-    showPage('library');
-    await loadContentLibrary();
-}
-
-// ==================== 内容库功能 ====================
-// 当前筛选状态
-let currentContentType = 'all';
-
-// ==================== 内容库功能 ====================
-async function loadContentLibrary(type = 'all') {
-    try {
-        const params = { limit: 50 };
-        if (type !== 'all') {
-            params.type = type === 'chinese' ? 'chinese_poem' : 'english_poem';
-        }
-        const res = await ContentService.getList(params);
-        const container = document.getElementById('content-list');
-        
-        if (container && res.data) {
-            container.innerHTML = res.data.map(item => {
-                const typeIcon = item.type.startsWith('english') ? '🇬🇧' : '📜';
-                const typeLabel = item.type.startsWith('english') ? '英文' : '中文';
-                return `
-                <div class="content-item" onclick="selectContent('${item.id}')">
-                    <div class="content-header">
-                        <div class="content-title">${typeIcon} ${item.title}</div>
-                        <span class="content-type-badge">${typeLabel}</span>
-                    </div>
-                    <div class="content-meta">${item.author || ''} ${item.dynasty || ''}</div>
-                    <div class="content-preview">${item.original_text.slice(0, 50)}${item.original_text.length > 50 ? '...' : ''}</div>
-                </div>
-            `}).join('');
-        }
-    } catch (err) {
-        console.error('加载内容库失败:', err);
-    }
-}
-
-function filterByType(type) {
-    currentContentType = type;
-    
-    // 更新Tab样式
-    document.querySelectorAll('.type-tab').forEach(tab => {
-        tab.classList.remove('active');
-        if (tab.dataset.type === type) {
-            tab.classList.add('active');
-        }
-    });
-    
-    // 重新加载内容
-    loadContentLibrary(type);
-}
-
-async function selectContent(contentId) {
-    try {
-        const res = await ContentService.getById(contentId);
-        const content = res.data;
-        
-        AppState.content.id = content.id;
-        AppState.content.title = content.title;
-        AppState.content.text = content.original_text;
-        AppState.content.sentences = splitIntoSentences(content.original_text);
-        AppState.content.type = content.type;
-        
-        renderContentPreview();
-        showPage('preview');
-    } catch (err) {
-        console.error('获取内容失败:', err);
-        alert('获取内容失败');
-    }
+function updateHomeStats() {
+    const todayCount = AppState.history.stats.todayCount || 0;
+    document.getElementById('today-count').textContent = todayCount;
 }
 
 // ==================== 文字输入功能 ====================
-async function previewContent() {
+function previewContent() {
     const text = document.getElementById('content-text').value.trim();
-    if (!text) {
-        alert('请输入要背诵的内容');
-        return;
-    }
-    
+    if (!text) { alert('请输入要背诵的内容'); return; }
     AppState.content.title = text.slice(0, 10) + (text.length > 10 ? '...' : '');
     AppState.content.text = text;
     AppState.content.sentences = splitIntoSentences(text);
-    
-    // 创建自定义内容
-    try {
-        const res = await ContentService.create({
-            title: AppState.content.title,
-            original_text: text,
-            type: 'custom'
-        });
-        AppState.content.id = res.data.id;
-    } catch (err) {
-        console.error('创建内容失败:', err);
-    }
     
     renderContentPreview();
     showPage('preview');
@@ -680,6 +278,85 @@ function renderContentPreview() {
     });
 }
 
+// ==================== 图片输入功能 ====================
+function initImageUpload() {
+    const uploadArea = document.getElementById('upload-area');
+    const imageInput = document.getElementById('image-input');
+    
+    uploadArea.addEventListener('click', () => imageInput.click());
+    
+    uploadArea.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        uploadArea.style.borderColor = 'var(--primary-color)';
+    });
+    
+    uploadArea.addEventListener('dragleave', () => {
+        uploadArea.style.borderColor = 'var(--border-color)';
+    });
+    
+    uploadArea.addEventListener('drop', (e) => {
+        e.preventDefault();
+        uploadArea.style.borderColor = 'var(--border-color)';
+        const file = e.dataTransfer.files[0];
+        if (file && file.type.startsWith('image/')) {
+            handleImageFile(file);
+        }
+    });
+    
+    imageInput.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (file) {
+            handleImageFile(file);
+        }
+    });
+}
+
+function handleImageFile(file) {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        document.getElementById('preview-img').src = e.target.result;
+        document.getElementById('upload-area').classList.add('hidden');
+        document.getElementById('image-preview').classList.remove('hidden');
+    };
+    reader.readAsDataURL(file);
+}
+
+function resetImage() {
+    document.getElementById('image-input').value = '';
+    document.getElementById('upload-area').classList.remove('hidden');
+    document.getElementById('image-preview').classList.add('hidden');
+    document.getElementById('ocr-result').classList.add('hidden');
+}
+
+function recognizeImage() {
+    const btn = event.target;
+    btn.textContent = '识别中...';
+    btn.disabled = true;
+    
+    setTimeout(() => {
+        const mockText = '床前明月光，\n疑是地上霜。\n举头望明月，\n低头思故乡。';
+        document.getElementById('ocr-text').value = mockText;
+        document.getElementById('ocr-result').classList.remove('hidden');
+        btn.textContent = '识别文字';
+        btn.disabled = false;
+    }, 2000);
+}
+
+function previewOCRContent() {
+    const text = document.getElementById('ocr-text').value.trim();
+    if (!text) {
+        alert('请先识别文字');
+        return;
+    }
+    
+    AppState.content.title = '图片识别内容';
+    AppState.content.text = text;
+    AppState.content.sentences = splitIntoSentences(text);
+    
+    renderContentPreview();
+    showPage('preview');
+}
+
 // ==================== 模式选择 ====================
 function selectMode(mode) {
     AppState.recitation.mode = mode;
@@ -690,338 +367,394 @@ function selectMode(mode) {
     document.querySelector(`[data-mode="${mode}"]`).classList.add('selected');
 }
 
-// ==================== 背诵功能 ====================
-async function startRecitation() {
+// ==================== 背诵功能（核心优化） ====================
+
+/**
+ * 开始背诵
+ */
+function startRecitation() {
     AppState.recitation.currentIndex = 0;
     AppState.recitation.results = [];
-    
-    // 创建学习会话
-    try {
-        const res = await SessionService.create(AppState.content.id, AppState.session.type);
-        AppState.session.id = res.data.session_id;
-    } catch (err) {
-        console.error('创建会话失败:', err);
-    }
+    AppState.recitation.isPaused = false;
+    AppState.recitation.hintLevel = 0;
+    AppState.recitation.retryCount = 0;
     
     document.getElementById('recitation-title').textContent = AppState.content.title;
     renderRecitationContent();
     updateProgress();
+    updatePauseButton();
     
     showPage('recitation');
     
-    const isEnglish = AppState.content.type?.startsWith('english');
-    
     // 开场语音
     setTimeout(() => {
-        let openingText;
-        if (isEnglish) {
-            openingText = `Hello! Today we're going to recite "${AppState.content.title}". Are you ready? Let's begin!`;
-        } else {
-            openingText = `同学们好！今天我们来背诵《${AppState.content.title}》。准备好了吗？让我们开始吧！`;
-        }
+        const openingText = `同学们好！今天我们来背诵《${AppState.content.title}》。准备好了吗？让我们开始吧！`;
         speechSynthesizer.speak(openingText, () => {
             startCurrentSentence();
-        }, isEnglish);
+        });
     }, 500);
 }
 
+/**
+ * 渲染背诵内容 - 优化：聚焦当前句，折叠其他句子
+ */
 function renderRecitationContent() {
     const container = document.getElementById('content-display');
     container.innerHTML = '';
+    
+    const currentIdx = AppState.recitation.currentIndex;
+    const total = AppState.content.sentences.length;
     
     AppState.content.sentences.forEach((sentence, index) => {
         const div = document.createElement('div');
         div.className = 'sentence-item';
         div.id = `sentence-${index}`;
         
-        if (AppState.recitation.mode === 'fill' && index === AppState.recitation.currentIndex) {
-            const halfLength = Math.ceil(sentence.length / 2);
-            div.innerHTML = `${sentence.slice(0, halfLength)}<span class="fill-blank">?</span>`;
-        } else if (AppState.recitation.mode === 'hint' && index === AppState.recitation.currentIndex) {
-            div.innerHTML = `<span class="hint-text">${sentence[0]}</span>${'▪'.repeat(sentence.length - 1)}`;
-        } else if (index < AppState.recitation.currentIndex) {
+        // 计算与当前句的距离
+        const distance = Math.abs(index - currentIdx);
+        
+        if (index === currentIdx) {
+            // 当前句 - 高亮显示
+            div.classList.add('current');
+            
+            if (AppState.recitation.mode === 'fill') {
+                // 填空模式：按标点智能断句
+                const fillContent = getFillContent(sentence, AppState.recitation.hintLevel);
+                div.innerHTML = fillContent;
+            } else if (AppState.recitation.mode === 'hint') {
+                // 提示模式：根据提示等级渐进显示
+                const hintContent = getHintContent(sentence, AppState.recitation.hintLevel);
+                div.innerHTML = hintContent;
+            } else {
+                div.textContent = sentence;
+            }
+        } else if (index < currentIdx) {
+            // 已完成的句子
+            const result = AppState.recitation.results[index];
+            div.classList.add(result && result.isCorrect ? 'completed' : 'error');
             div.textContent = sentence;
+            
+            // 距离较远的已完成句子折叠
+            if (distance > 2) {
+                div.classList.add('collapsed');
+            }
         } else {
+            // 未到的句子
             div.textContent = sentence;
+            
+            // 距离较远的未来句子折叠
+            if (distance > 2) {
+                div.classList.add('collapsed');
+            }
         }
         
         container.appendChild(div);
     });
     
-    highlightCurrentSentence();
+    // 滚动到当前句
+    const currentEl = document.getElementById(`sentence-${currentIdx}`);
+    if (currentEl) {
+        currentEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
 }
 
-function highlightCurrentSentence() {
-    document.querySelectorAll('.sentence-item').forEach((el, index) => {
-        el.classList.remove('current', 'completed', 'error');
-        if (index === AppState.recitation.currentIndex) {
-            el.classList.add('current');
-            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        } else if (index < AppState.recitation.currentIndex) {
-            const result = AppState.recitation.results[index];
-            el.classList.add(result && result.isCorrect ? 'completed' : 'error');
+/**
+ * 填空模式：按标点智能断句，支持渐进提示
+ */
+function getFillContent(sentence, hintLevel) {
+    // 找到最后一个标点符号位置
+    const punctuationMatch = sentence.match(/[，。！？、；：""''）】]/g);
+    
+    let splitPos;
+    if (punctuationMatch && punctuationMatch.length > 0) {
+        // 在中间标点处断开
+        const midPunctIdx = Math.floor(punctuationMatch.length / 2);
+        let count = 0;
+        for (let i = 0; i < sentence.length; i++) {
+            if (/[，。！？、；：""''）】]/.test(sentence[i])) {
+                if (count === midPunctIdx) {
+                    splitPos = i + 1;
+                    break;
+                }
+                count++;
+            }
         }
-    });
+    }
+    
+    if (!splitPos) {
+        splitPos = Math.ceil(sentence.length / 2);
+    }
+    
+    const prefix = sentence.slice(0, splitPos);
+    const suffix = sentence.slice(splitPos);
+    
+    if (hintLevel === 0) {
+        // 完全隐藏后半部分
+        return `${prefix}<span class="fill-blank">______</span>`;
+    } else if (hintLevel === 1) {
+        // 显示后半部分的首字
+        return `${prefix}<span class="fill-blank">${suffix[0]}...</span>`;
+    } else {
+        // 显示完整内容
+        return `${prefix}<span class="fill-blank revealed">${suffix}</span>`;
+    }
 }
 
+/**
+ * 提示模式：渐进显示内容
+ */
+function getHintContent(sentence, hintLevel) {
+    if (hintLevel === 0) {
+        // 只显示首字
+        return `<span class="hint-text">${sentence[0]}</span><span class="hint-hidden">${'▪'.repeat(sentence.length - 1)}</span>`;
+    } else if (hintLevel === 1) {
+        // 显示前1/3
+        const showLen = Math.max(1, Math.ceil(sentence.length / 3));
+        return `<span class="hint-text">${sentence.slice(0, showLen)}</span><span class="hint-hidden">${'▪'.repeat(sentence.length - showLen)}</span>`;
+    } else if (hintLevel === 2) {
+        // 显示前2/3
+        const showLen = Math.max(1, Math.ceil(sentence.length * 2 / 3));
+        return `<span class="hint-text">${sentence.slice(0, showLen)}</span><span class="hint-hidden">${'▪'.repeat(sentence.length - showLen)}</span>`;
+    } else {
+        // 完全显示
+        return `<span class="hint-text">${sentence}</span>`;
+    }
+}
+
+/**
+ * 更新进度条和句子计数
+ */
 function updateProgress() {
-    const progress = (AppState.recitation.currentIndex / AppState.content.sentences.length) * 100;
+    const currentIdx = AppState.recitation.currentIndex;
+    const total = AppState.content.sentences.length;
+    const progress = total > 0 ? (currentIdx / total) * 100 : 0;
+    
     document.getElementById('progress-fill').style.width = `${progress}%`;
+    document.getElementById('progress-percent').textContent = `${Math.round(progress)}%`;
+    document.getElementById('sentence-counter').textContent = `第 ${currentIdx + 1} 句 / 共 ${total} 句`;
 }
 
+/**
+ * 开始当前句子的朗读/提示
+ */
 function startCurrentSentence() {
+    if (AppState.recitation.isPaused) return;
+    
     const currentSentence = AppState.content.sentences[AppState.recitation.currentIndex];
     const mode = AppState.recitation.mode;
-    const isEnglish = AppState.content.type?.startsWith('english');
     
+    // 重置提示等级
+    AppState.recitation.hintLevel = 0;
     renderRecitationContent();
-    
-    // 检查语音合成是否可用
-    if (!window.speechSynthesis) {
-        // 语音不可用，直接进入监听模式
-        updateVoiceIndicator('listening');
-        return;
-    }
+    hideSpeechResult();
     
     if (mode === 'repeat') {
-        if (isEnglish) {
-            speechSynthesizer.speak(`Read after me: '${currentSentence}' —`, () => {
-                updateVoiceIndicator('listening');
-            }, true);
-        } else {
-            speechSynthesizer.speak(`跟我一起读：'${currentSentence}'——`, () => {
-                updateVoiceIndicator('listening');
-            }, false);
-        }
+        speechSynthesizer.speak(`跟我一起读：${currentSentence}——`, () => {
+            updateVoiceIndicator('waiting');
+        });
     } else if (mode === 'fill') {
-        const halfLength = Math.ceil(currentSentence.length / 2);
-        const prefix = currentSentence.slice(0, halfLength);
-        if (isEnglish) {
-            speechSynthesizer.speak(`'${prefix}', what's next?`, () => {
-                updateVoiceIndicator('listening');
-            }, true);
-        } else {
-            speechSynthesizer.speak(`'${prefix}'，接下来是什么？`, () => {
-                updateVoiceIndicator('listening');
-            }, false);
+        const punctuationMatch = currentSentence.match(/[，。！？、；：""''）】]/g);
+        let splitPos;
+        if (punctuationMatch && punctuationMatch.length > 0) {
+            const midPunctIdx = Math.floor(punctuationMatch.length / 2);
+            let count = 0;
+            for (let i = 0; i < currentSentence.length; i++) {
+                if (/[，。！？、；：""''）】]/.test(currentSentence[i])) {
+                    if (count === midPunctIdx) {
+                        splitPos = i + 1;
+                        break;
+                    }
+                    count++;
+                }
+            }
         }
+        if (!splitPos) splitPos = Math.ceil(currentSentence.length / 2);
+        const prefix = currentSentence.slice(0, splitPos);
+        speechSynthesizer.speak(`${prefix}，接下来是什么？`, () => {
+            updateVoiceIndicator('waiting');
+        });
     } else if (mode === 'hint') {
-        if (isEnglish) {
-            speechSynthesizer.speak(`The first word is '${currentSentence.split(' ')[0]}'. What comes next?`, () => {
-                updateVoiceIndicator('listening');
-            }, true);
-        } else {
-            speechSynthesizer.speak(`第一个字是'${currentSentence[0]}'，想一想后面是什么？`, () => {
-                updateVoiceIndicator('listening');
-            }, false);
-        }
+        speechSynthesizer.speak(`第一个字是"${currentSentence[0]}"，想一想后面是什么？`, () => {
+            updateVoiceIndicator('waiting');
+        });
     } else if (mode === 'full') {
         if (AppState.recitation.currentIndex === 0) {
-            if (isEnglish) {
-                speechSynthesizer.speak('Please start reciting', () => {
-                    updateVoiceIndicator('listening');
-                }, true);
-            } else {
-                speechSynthesizer.speak('请开始背诵', () => {
-                    updateVoiceIndicator('listening');
-                }, false);
-            }
+            speechSynthesizer.speak('请开始背诵', () => {
+                updateVoiceIndicator('waiting');
+            });
         } else {
-            updateVoiceIndicator('listening');
+            updateVoiceIndicator('waiting');
         }
     }
 }
 
+/**
+ * 更新语音状态指示器 - 优化：区分更多状态
+ * @param {'speaking'|'listening'|'waiting'|'idle'|'paused'} state
+ */
 function updateVoiceIndicator(state, text = '') {
     const indicator = document.getElementById('voice-indicator');
     const voiceText = document.getElementById('voice-text');
-    const waves = indicator?.querySelector('.voice-waves');
+    const waves = indicator.querySelector('.voice-waves');
+    
+    // 移除所有状态类
+    waves.classList.remove('listening', 'speaking', 'waiting', 'paused');
+    indicator.classList.remove('state-speaking', 'state-listening', 'state-waiting', 'state-paused');
     
     if (state === 'speaking') {
-        if (voiceText) voiceText.textContent = `🎵 ${text.slice(0, 20)}...`;
-        waves?.classList.remove('listening');
+        voiceText.textContent = `🔊 ${text.length > 15 ? text.slice(0, 15) + '...' : text}`;
+        waves.classList.add('speaking');
+        indicator.classList.add('state-speaking');
     } else if (state === 'listening') {
-        if (voiceText) voiceText.textContent = '🎤 正在听...';
-        waves?.classList.add('listening');
+        voiceText.textContent = '🎤 正在听你说...';
+        waves.classList.add('listening');
+        indicator.classList.add('state-listening');
+    } else if (state === 'waiting') {
+        voiceText.textContent = '👆 点击麦克风开始';
+        waves.classList.add('waiting');
+        indicator.classList.add('state-waiting');
+    } else if (state === 'paused') {
+        voiceText.textContent = '⏸ 已暂停';
+        waves.classList.add('paused');
+        indicator.classList.add('state-paused');
     } else {
-        if (voiceText) voiceText.textContent = '点击开始';
-        waves?.classList.remove('listening');
+        voiceText.textContent = '准备开始';
     }
 }
 
+/**
+ * 更新麦克风按钮状态
+ */
 function updateMicButton(isListening) {
     const micBtn = document.getElementById('mic-btn');
-    if (micBtn) {
-        if (isListening) {
-            micBtn.classList.add('listening');
-        } else {
-            micBtn.classList.remove('listening');
-        }
+    const micHint = document.getElementById('mic-hint');
+    
+    if (isListening) {
+        micBtn.classList.add('listening');
+        micHint.textContent = '正在录音，再次点击结束';
+    } else {
+        micBtn.classList.remove('listening');
+        micHint.textContent = '点击开始录音';
     }
 }
 
-// ==================== 麦克风控制 ====================
-let speechRecognitionBusy = false; // 防止重复启动
-let isStopping = false; // 防止停止过程中误触发
-let recognitionActive = false; // 追踪识别器真实状态
+/**
+ * 更新实时语音识别文字显示
+ */
+function updateSpeechResult(text, isFinal) {
+    const resultDiv = document.getElementById('speech-result');
+    const resultText = document.getElementById('speech-result-text');
+    
+    resultDiv.classList.remove('hidden');
+    resultText.textContent = text;
+    resultText.classList.toggle('final', isFinal);
+}
+
+function hideSpeechResult() {
+    const resultDiv = document.getElementById('speech-result');
+    resultDiv.classList.add('hidden');
+}
+
+// ==================== 麦克风控制（优化：点击切换模式） ====================
+
+function initMicButton() {
+    const micBtn = document.getElementById('mic-btn');
+    
+    // 点击切换模式（替代原来的按住说话）
+    micBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        
+        if (AppState.recitation.isPaused) {
+            // 暂停状态下不允许录音
+            return;
+        }
+        
+        if (AppState.recitation.isListening) {
+            // 正在录音 → 停止
+            stopListening();
+        } else {
+            // 未在录音 → 开始
+            startListening();
+        }
+    });
+    
+    // 保留长按支持（兼容旧习惯）
+    micBtn.addEventListener('mousedown', (e) => {
+        // 不再需要长按逻辑，点击已足够
+    });
+}
 
 function startListening() {
-    // 如果正在停止中，不响应
-    if (isStopping) {
-        return;
-    }
+    if (AppState.recitation.isPaused) return;
     
-    // 如果正在说话，先停止
     if (AppState.recitation.isSpeaking) {
         speechSynthesizer.stop();
     }
     
-    // 如果识别器还在运行，先停止
-    if (recognitionActive) {
-        try {
-            speechRecognizer.stop();
-        } catch (e) {}
-        // 等待识别器真正停止
-        setTimeout(() => {
-            recognitionActive = false;
-            startListening(); // 递归调用重新开始
-        }, 200);
-        return;
-    }
-    
-    // 如果已经在监听，先停止
-    if (AppState.recitation.isListening) {
-        speechRecognizer.stop();
-        recognitionActive = false;
-        return;
-    }
-    
-    speechRecognitionBusy = true;
-    isStopping = false;
-    recognitionActive = true;
-    
     speechRecognizer.start(
         (text, isFinal) => {
-            speechRecognitionBusy = false;
-            if (isFinal && text) {
+            if (isFinal) {
                 handleRecitationResult(text);
             }
         },
         (finalText) => {
-            speechRecognitionBusy = false;
-            recognitionActive = false;
             if (finalText) {
                 handleRecitationResult(finalText);
             }
+        },
+        (error) => {
+            console.error('识别错误:', error);
+            updateVoiceIndicator('waiting');
         }
     );
 }
 
 function stopListening() {
-    // 如果正在停止中，不重复停止
-    if (isStopping) {
-        return;
-    }
-    
-    if (recognitionActive || AppState.recitation.isListening) {
-        isStopping = true;
-        try {
-            speechRecognizer.stop();
-        } catch (e) {}
-        speechRecognitionBusy = false;
-        recognitionActive = false;
-        AppState.recitation.isListening = false;
-        updateMicButton(false);
-        
-        setTimeout(() => {
-            isStopping = false;
-        }, 300);
-    }
+    speechRecognizer.stop();
+    updateVoiceIndicator('waiting');
 }
 
-// 停止所有语音活动（不退出背诵页面）
-function stopAll() {
-    console.log('停止所有语音活动');
-    isStopping = true;
-    
-    // 停止语音合成
-    speechSynthesizer.stop();
-    
-    // 停止语音识别
-    try {
-        speechRecognizer.stop();
-    } catch (e) {}
-    speechRecognitionBusy = false;
-    recognitionActive = false;
-    AppState.recitation.isListening = false;
-    
-    // 更新UI
-    updateVoiceIndicator('idle');
-    updateMicButton(false);
-    
-    setTimeout(() => {
-        isStopping = false;
-    }, 300);
-    
-    // 提示用户
-    const isEnglish = AppState.content.type?.startsWith('english');
-    if (isEnglish) {
-        speechSynthesizer.speak('Stopped. Click the microphone when ready.', null, true);
-    } else {
-        speechSynthesizer.speak('已停止，准备好后点击麦克风继续。', null, false);
-    }
-}
-
-async function handleRecitationResult(recitedText) {
+/**
+ * 处理背诵结果 - 优化：支持重试次数限制，提供选择
+ */
+function handleRecitationResult(recitedText) {
     const currentIndex = AppState.recitation.currentIndex;
     const currentSentence = AppState.content.sentences[currentIndex];
-    const isEnglish = AppState.content.type?.startsWith('english');
     
-    // 调用后端评估
-    let evaluation;
-    try {
-        const res = await SessionService.recite(AppState.session.id, {
-            input_type: 'text',
-            input_content: recitedText,
-            standard_text: currentSentence
-        });
-        evaluation = {
-            isCorrect: res.data.evaluation.is_correct,
-            accuracy: res.data.evaluation.accuracy,
-            errors: res.data.evaluation.errors
-        };
-    } catch (err) {
-        console.error('评估失败:', err);
-        // 本地评估兜底
-        evaluation = evaluateRecitation(currentSentence, recitedText);
-    }
-    
+    const evaluation = evaluateRecitation(currentSentence, recitedText);
     AppState.recitation.results[currentIndex] = evaluation;
     
     if (evaluation.isCorrect) {
-        let encouragement;
-        if (isEnglish) {
-            const encouragements = ['Great!', 'Excellent!', 'Wonderful!', 'Perfect!'];
-            encouragement = encouragements[Math.floor(Math.random() * encouragements.length)];
-        } else {
-            const encouragements = ['很好！', '不错！', '真棒！', '非常好！'];
-            encouragement = encouragements[Math.floor(Math.random() * encouragements.length)];
-        }
-        speechSynthesizer.speak(encouragement, () => {
+        // 回答正确
+        const encouragements = ['很好！', '不错！', '真棒！', '非常好！', '太厉害了！'];
+        const randomEncouragement = encouragements[Math.floor(Math.random() * encouragements.length)];
+        speechSynthesizer.speak(randomEncouragement, () => {
             nextSentence();
-        }, isEnglish);
+        });
     } else {
-        let feedback;
-        if (isEnglish) {
-            feedback = `Almost! It should be '${currentSentence}'. Let's try again~`;
+        // 回答错误
+        AppState.recitation.retryCount++;
+        
+        if (AppState.recitation.retryCount >= AppState.recitation.maxRetries) {
+            // 超过最大重试次数，直接告诉答案并跳过
+            speechSynthesizer.speak(`没关系，正确答案是"${currentSentence}"，我们继续下一句吧！`, () => {
+                AppState.recitation.retryCount = 0;
+                nextSentence();
+            });
         } else {
-            feedback = `接近了，应该是'${currentSentence}'，我们再来一遍~`;
+            // 还有重试机会
+            const remaining = AppState.recitation.maxRetries - AppState.recitation.retryCount;
+            speechSynthesizer.speak(
+                `接近了，应该是"${currentSentence}"，还有${remaining}次机会，再来一遍吧！`,
+                () => {
+                    setTimeout(() => startCurrentSentence(), 500);
+                }
+            );
         }
-        speechSynthesizer.speak(feedback, () => {
-            setTimeout(() => startCurrentSentence(), 500);
-        }, isEnglish);
     }
 }
+
+// ==================== 评估逻辑 ====================
 
 function evaluateRecitation(original, recited) {
     const cleanOriginal = preprocessText(original);
@@ -1039,19 +772,26 @@ function evaluateRecitation(original, recited) {
 }
 
 function preprocessText(text) {
-    return text.replace(/[，。！？、；：""''（）【】\s]/g, '').toLowerCase();
+    return text
+        .replace(/[，。！？、；：""''（）【】]/g, '')
+        .replace(/\s/g, '')
+        .toLowerCase();
 }
 
 function calculateSimilarity(str1, str2) {
     if (str1 === str2) return 1;
-    if (!str1 || !str2) return 0;
+    if (str1.length === 0 || str2.length === 0) return 0;
     
     const len1 = str1.length;
     const len2 = str2.length;
     const matrix = [];
     
-    for (let i = 0; i <= len1; i++) matrix[i] = [i];
-    for (let j = 0; j <= len2; j++) matrix[0][j] = j;
+    for (let i = 0; i <= len1; i++) {
+        matrix[i] = [i];
+    }
+    for (let j = 0; j <= len2; j++) {
+        matrix[0][j] = j;
+    }
     
     for (let i = 1; i <= len1; i++) {
         for (let j = 1; j <= len2; j++) {
@@ -1064,11 +804,15 @@ function calculateSimilarity(str1, str2) {
         }
     }
     
-    return 1 - matrix[len1][len2] / Math.max(len1, len2);
+    const distance = matrix[len1][len2];
+    const maxLen = Math.max(len1, len2);
+    return 1 - distance / maxLen;
 }
 
 function nextSentence() {
     AppState.recitation.currentIndex++;
+    AppState.recitation.retryCount = 0;
+    AppState.recitation.hintLevel = 0;
     updateProgress();
     
     if (AppState.recitation.currentIndex >= AppState.content.sentences.length) {
@@ -1078,59 +822,104 @@ function nextSentence() {
     }
 }
 
-async function finishRecitation() {
+function finishRecitation() {
     const results = AppState.recitation.results;
-    const correctCount = results.filter(r => r.isCorrect).length;
+    const correctCount = results.filter(r => r && r.isCorrect).length;
     const totalCount = results.length;
     
-    // 结束会话
-    let finalScore = 0;
-    try {
-        const res = await SessionService.end(AppState.session.id);
-        finalScore = res.data.final_score;
-    } catch (err) {
-        console.error('结束会话失败:', err);
-        const avgAccuracy = results.reduce((sum, r) => sum + r.accuracy, 0) / totalCount;
-        const completeness = (correctCount / totalCount) * 100;
-        finalScore = Math.round(avgAccuracy * 0.6 + completeness * 0.4);
-    }
+    const avgAccuracy = results.reduce((sum, r) => sum + (r ? r.accuracy : 0), 0) / totalCount;
+    const completeness = (correctCount / totalCount) * 100;
+    const score = Math.round(avgAccuracy * 0.6 + completeness * 0.4);
     
-    showResult(finalScore, results);
+    saveRecitationRecord(score, results);
+    showResult(score, results);
 }
 
-// ==================== 控制按钮 ====================
+// ==================== 控制按钮（优化） ====================
+
+/**
+ * 重读当前句
+ */
 function repeatCurrent() {
+    if (AppState.recitation.isPaused) return;
     speechSynthesizer.stop();
     speechRecognizer.stop();
+    hideSpeechResult();
     startCurrentSentence();
 }
 
-async function showHint() {
-    const currentSentence = AppState.content.sentences[AppState.recitation.currentIndex];
-    const isEnglish = AppState.content.type?.startsWith('english');
+/**
+ * 渐进提示 - 优化：多次点击逐步揭示更多内容
+ */
+function showHint() {
+    if (AppState.recitation.isPaused) return;
     
-    try {
-        const res = await TeacherService.getHint(currentSentence, '', 2);
-        speechSynthesizer.speak(res.data.hint, null, isEnglish);
-    } catch (err) {
-        if (isEnglish) {
-            speechSynthesizer.speak(`Hint: starts with "${currentSentence.split(' ')[0]}"...`, null, true);
-        } else {
-            speechSynthesizer.speak(`提示：${currentSentence.slice(0, 3)}...`, null, false);
-        }
+    const maxHintLevel = 3;
+    AppState.recitation.hintLevel = Math.min(AppState.recitation.hintLevel + 1, maxHintLevel);
+    
+    renderRecitationContent();
+    
+    const currentSentence = AppState.content.sentences[AppState.recitation.currentIndex];
+    
+    if (AppState.recitation.hintLevel >= maxHintLevel) {
+        // 已到最大提示等级，直接显示答案
+        speechSynthesizer.speak(`答案是"${currentSentence}"，记住它！`);
+    } else {
+        const hintTexts = [
+            `再想想，提示：${currentSentence.slice(0, 2)}...`,
+            `再提示一下：${currentSentence.slice(0, Math.ceil(currentSentence.length / 2))}...`,
+            `最后一个提示：${currentSentence.slice(0, Math.ceil(currentSentence.length * 2 / 3))}...`
+        ];
+        speechSynthesizer.speak(hintTexts[AppState.recitation.hintLevel - 1] || hintTexts[0]);
     }
 }
 
+/**
+ * 跳过当前句
+ */
 function skipCurrent() {
+    speechSynthesizer.stop();
+    speechRecognizer.stop();
+    hideSpeechResult();
+    
     const currentSentence = AppState.content.sentences[AppState.recitation.currentIndex];
     AppState.recitation.results[AppState.recitation.currentIndex] = {
         original: currentSentence,
-        recited: '',
+        recited: '（已跳过）',
         similarity: 0,
         isCorrect: false,
         accuracy: 0
     };
     nextSentence();
+}
+
+/**
+ * 暂停/继续 - 新增功能
+ */
+function togglePause() {
+    AppState.recitation.isPaused = !AppState.recitation.isPaused;
+    updatePauseButton();
+    
+    if (AppState.recitation.isPaused) {
+        speechSynthesizer.stop();
+        speechRecognizer.stop();
+        updateVoiceIndicator('paused');
+    } else {
+        updateVoiceIndicator('waiting');
+        // 恢复后重新开始当前句
+        startCurrentSentence();
+    }
+}
+
+function updatePauseButton() {
+    const btn = document.getElementById('btn-pause');
+    if (AppState.recitation.isPaused) {
+        btn.innerHTML = '<span class="ctrl-icon">▶️</span><span class="ctrl-label">继续</span>';
+        btn.classList.add('active');
+    } else {
+        btn.innerHTML = '<span class="ctrl-icon">⏸️</span><span class="ctrl-label">暂停</span>';
+        btn.classList.remove('active');
+    }
 }
 
 function confirmExit() {
@@ -1145,6 +934,7 @@ function confirmExitRecitation() {
     closeExitModal();
     speechSynthesizer.stop();
     speechRecognizer.stop();
+    AppState.recitation.isPaused = false;
     goHome();
 }
 
@@ -1180,10 +970,11 @@ function showResult(score, results) {
     
     const stars = calculateStars(score);
     document.getElementById('stars').textContent = stars;
+    
     document.getElementById('result-comment').textContent = getComment(score);
     
-    const correctCount = results.filter(r => r.isCorrect).length;
-    const avgAccuracy = results.reduce((sum, r) => sum + r.accuracy, 0) / results.length;
+    const correctCount = results.filter(r => r && r.isCorrect).length;
+    const avgAccuracy = results.reduce((sum, r) => sum + (r ? r.accuracy : 0), 0) / results.length;
     
     document.getElementById('accuracy-value').textContent = Math.round(avgAccuracy) + '%';
     document.getElementById('accuracy-bar').style.width = avgAccuracy + '%';
@@ -1199,9 +990,8 @@ function showResult(score, results) {
     renderErrorAnalysis(results);
     
     const closingText = getClosingText(score);
-    const isEnglish = AppState.content.type?.startsWith('english');
     setTimeout(() => {
-        speechSynthesizer.speak(closingText, null, isEnglish);
+        speechSynthesizer.speak(closingText);
     }, 1000);
 }
 
@@ -1228,52 +1018,37 @@ function calculateStars(score) {
 }
 
 function getComment(score) {
-    const isEnglish = AppState.content.type?.startsWith('english');
-    if (score >= 90) {
-        return isEnglish ? 'Perfect! You could be a teacher!' : '完美！你可以当小老师了！';
-    }
-    if (score >= 75) {
-        return isEnglish ? 'Excellent! A few more practices and you\'ll be perfect!' : '非常棒！再练习几次就能满分了！';
-    }
-    if (score >= 60) {
-        return isEnglish ? 'Good job! Keep it up!' : '不错！继续加油，下次会更好！';
-    }
-    if (score >= 40) {
-        return isEnglish ? 'Good progress! Let\'s try again~' : '有进步！我们再来一遍~';
-    }
-    return isEnglish ? 'Don\'t worry, practice makes perfect!' : '没关系，多练习就能记住！';
+    if (score >= 90) return '完美！你可以当小老师了！';
+    if (score >= 75) return '非常棒！再练习几次就能满分了！';
+    if (score >= 60) return '不错！继续加油，下次会更好！';
+    if (score >= 40) return '有进步！我们再来一遍~';
+    return '没关系，多练习就能记住！';
 }
 
 function getClosingText(score) {
-    const isEnglish = AppState.content.type?.startsWith('english');
-    if (score >= 90) {
-        return isEnglish ? 'Amazing! You\'ve mastered it! Give yourself a round of applause!' : '太棒了！你已经完全掌握了！给自己鼓鼓掌吧！';
-    }
-    if (score >= 75) {
-        return isEnglish ? 'Great job! A few more practices will make you more proficient!' : '很不错！再练习几次会更熟练！';
-    }
-    if (score >= 60) {
-        return isEnglish ? 'Making progress! Keep going!' : '有进步！继续加油！';
-    }
-    return isEnglish ? 'Don\'t worry, practice makes perfect! You\'ll do better next time!' : '没关系，多练习就能记住！下次一定能更好！';
+    if (score >= 90) return '太棒了！你已经完全掌握了！给自己鼓鼓掌吧！';
+    if (score >= 75) return '很不错！再练习几次会更熟练！';
+    if (score >= 60) return '有进步！继续加油！';
+    return '没关系，多练习就能记住！下次一定能更好！';
 }
 
 function renderErrorAnalysis(results) {
     const errorList = document.getElementById('error-list');
     errorList.innerHTML = '';
     
-    const errors = results.filter(r => !r.isCorrect);
+    const errors = results.filter(r => r && !r.isCorrect);
     
     if (errors.length === 0) {
         errorList.innerHTML = '<p style="color: var(--success-color);">🎉 太棒了！没有错误！</p>';
         return;
     }
     
-    errors.forEach((error, index) => {
+    errors.forEach((error) => {
+        const idx = results.indexOf(error);
         const div = document.createElement('div');
         div.className = 'error-item';
         div.innerHTML = `
-            <div>第${results.indexOf(error) + 1}句</div>
+            <div>第${idx + 1}句</div>
             <div>正确：<span class="expected">${error.original}</span></div>
             <div>你的：<span class="actual">${error.recited || '（未识别）'}</span></div>
         `;
@@ -1290,221 +1065,125 @@ function saveResult() {
 }
 
 // ==================== 历史记录 ====================
-async function renderHistory() {
-    try {
-        const statsRes = await UserService.getStats();
-        const stats = statsRes.data;
-        
-        document.getElementById('total-count').textContent = stats.totalSessions || 0;
-        document.getElementById('avg-score').textContent = stats.avgScore || 0;
-        document.getElementById('streak-days').textContent = stats.streakDays || 0;
-        
-        const historyRes = await UserService.getHistory(20);
-        const historyItems = document.getElementById('history-items');
-        
-        if (historyItems && historyRes.data) {
-            if (historyRes.data.length === 0) {
-                historyItems.innerHTML = '<p style="text-align: center; color: var(--text-secondary);">还没有背诵记录</p>';
-            } else {
-                historyItems.innerHTML = historyRes.data.map(record => {
-                    const date = new Date(record.start_time);
-                    return `
-                        <div class="history-item">
-                            <div class="info">
-                                <div class="title">${record.title || '自定义内容'}</div>
-                                <div class="date">${date.toLocaleDateString()} ${date.toLocaleTimeString()}</div>
-                            </div>
-                            <div class="score">${record.final_score || 0}分</div>
-                        </div>
-                    `;
-                }).join('');
-            }
+function saveRecitationRecord(score, results) {
+    const record = {
+        id: Date.now(),
+        title: AppState.content.title,
+        score: score,
+        date: new Date().toISOString(),
+        results: results
+    };
+    
+    AppState.history.records.unshift(record);
+    AppState.history.stats.totalCount++;
+    AppState.history.stats.todayCount++;
+    
+    const totalScore = AppState.history.records.reduce((sum, r) => sum + r.score, 0);
+    AppState.history.stats.avgScore = Math.round(totalScore / AppState.history.records.length);
+    
+    checkAchievements();
+    saveToLocalStorage();
+}
+
+function checkAchievements() {
+    const achievements = [
+        { id: 'first', icon: '🏆', name: '背诵新手', condition: () => AppState.history.stats.totalCount >= 1 },
+        { id: 'ten', icon: '📚', name: '积累达人', condition: () => AppState.history.stats.totalCount >= 10 },
+        { id: 'perfect', icon: '⭐', name: '满分王者', condition: () => AppState.history.records.some(r => r.score >= 90) },
+        { id: 'streak', icon: '🔥', name: '连续打卡', condition: () => AppState.history.stats.streakDays >= 7 }
+    ];
+    
+    achievements.forEach(achievement => {
+        if (achievement.condition() && !AppState.history.achievements.find(a => a.id === achievement.id)) {
+            AppState.history.achievements.push({
+                id: achievement.id,
+                icon: achievement.icon,
+                name: achievement.name,
+                unlockedAt: new Date().toISOString()
+            });
         }
-    } catch (err) {
-        console.error('加载历史记录失败:', err);
+    });
+}
+
+function renderHistory() {
+    document.getElementById('total-count').textContent = AppState.history.stats.totalCount;
+    document.getElementById('avg-score').textContent = AppState.history.stats.avgScore;
+    document.getElementById('streak-days').textContent = AppState.history.stats.streakDays;
+    
+    const achievementList = document.getElementById('achievement-list');
+    achievementList.innerHTML = '';
+    
+    const allAchievements = [
+        { id: 'first', icon: '🏆', name: '背诵新手' },
+        { id: 'ten', icon: '📚', name: '积累达人' },
+        { id: 'perfect', icon: '⭐', name: '满分王者' },
+        { id: 'streak', icon: '🔥', name: '连续打卡' }
+    ];
+    
+    allAchievements.forEach(achievement => {
+        const isUnlocked = AppState.history.achievements.find(a => a.id === achievement.id);
+        const div = document.createElement('div');
+        div.className = `achievement-item ${isUnlocked ? 'unlocked' : ''}`;
+        div.innerHTML = `
+            <span class="icon">${achievement.icon}</span>
+            <span>${achievement.name}</span>
+        `;
+        achievementList.appendChild(div);
+    });
+    
+    const historyItems = document.getElementById('history-items');
+    historyItems.innerHTML = '';
+    
+    if (AppState.history.records.length === 0) {
+        historyItems.innerHTML = '<p style="text-align: center; color: var(--text-secondary);">还没有背诵记录，快去开始第一次吧！</p>';
+        return;
+    }
+    
+    AppState.history.records.slice(0, 10).forEach(record => {
+        const div = document.createElement('div');
+        div.className = 'history-item';
+        const date = new Date(record.date);
+        div.innerHTML = `
+            <div class="info">
+                <div class="title">${record.title}</div>
+                <div class="date">${date.toLocaleDateString()} ${date.toLocaleTimeString()}</div>
+            </div>
+            <div class="score">${record.score}分</div>
+        `;
+        historyItems.appendChild(div);
+    });
+}
+
+// ==================== 本地存储 ====================
+function saveToLocalStorage() {
+    try {
+        localStorage.setItem('recitationHelper_history', JSON.stringify(AppState.history));
+    } catch (e) {
+        console.error('保存失败:', e);
+    }
+}
+
+function loadFromLocalStorage() {
+    try {
+        const saved = localStorage.getItem('recitationHelper_history');
+        if (saved) {
+            AppState.history = JSON.parse(saved);
+        }
+    } catch (e) {
+        console.error('加载失败:', e);
     }
 }
 
 // ==================== 初始化 ====================
-async function init() {
-    // 尝试加载已保存的认证信息
-    const hasAuth = AuthService.loadAuth();
-    
-    if (!hasAuth) {
-        // 游客登录
-        try {
-            await AuthService.guestLogin();
-            console.log('游客登录成功');
-        } catch (err) {
-            console.error('游客登录失败:', err);
-        }
-    }
-    
-    // 加载首页数据
-    await loadHomeData();
-    
-    // 加载复习提醒
-    await loadReviewReminder();
-    
-    // 默认选择跟读模式
+document.addEventListener('DOMContentLoaded', () => {
+    loadFromLocalStorage();
+    updateHomeStats();
     selectMode('repeat');
-}
+    
+    // 初始化麦克风按钮（点击切换模式）
+    initMicButton();
+});
 
-// ==================== 复习提醒功能 ====================
-async function loadReviewReminder() {
-    try {
-        const res = await ReviewService.getToday();
-        const reminderEl = document.getElementById('review-reminder');
-        const contentEl = document.getElementById('reminder-content');
-        
-        if (res.data && res.data.tasks && res.data.tasks.length > 0) {
-            const tasks = res.data.tasks;
-            const titles = tasks.slice(0, 3).map(t => t.title).join('、');
-            const moreText = tasks.length > 3 ? `等${tasks.length}篇` : '';
-            
-            contentEl.innerHTML = `<p>需要复习：${titles}${moreText}</p><p>预计时长：约${res.data.estimated_minutes}分钟</p>`;
-            reminderEl.classList.remove('hidden');
-            
-            // 语音提醒
-            if (AppState.settings.autoNext !== false) {
-                setTimeout(() => {
-                    speechSynthesizer.speak(`今天有${tasks.length}篇内容需要复习，加油！`);
-                }, 2000);
-            }
-        } else {
-            reminderEl.classList.add('hidden');
-        }
-    } catch (err) {
-        console.error('加载复习提醒失败:', err);
-    }
-}
-
-async function startReview() {
-    try {
-        const res = await ReviewService.getToday();
-        if (res.data && res.data.tasks && res.data.tasks.length > 0) {
-            // 选择第一个需要复习的内容
-            const firstTask = res.data.tasks[0];
-            await selectContent(firstTask.id);
-        }
-    } catch (err) {
-        console.error('开始复习失败:', err);
-    }
-}
-
-// ==================== 数据统计功能 ====================
-async function showStats() {
-    showPage('stats');
-    await loadStatsData();
-}
-
-async function loadStatsData() {
-    try {
-        // 加载用户统计
-        const statsRes = await UserService.getStats();
-        const stats = statsRes.data;
-        
-        document.getElementById('stats-total-sessions').textContent = stats.totalSessions || 0;
-        document.getElementById('stats-avg-score').textContent = Math.round(stats.avgScore || 0);
-        document.getElementById('stats-streak').textContent = stats.streakDays || 0;
-        document.getElementById('stats-mastered').textContent = stats.totalContentMastered || 0;
-        
-        // 加载本周数据
-        await loadWeeklyChart();
-        
-        // 加载内容掌握情况
-        await loadMasteryList();
-    } catch (err) {
-        console.error('加载统计数据失败:', err);
-    }
-}
-
-async function loadWeeklyChart() {
-    try {
-        const res = await UserService.getHistory(100);
-        const chartPlaceholder = document.getElementById('chart-placeholder');
-        
-        if (res.data && res.data.length > 0) {
-            // 按天统计
-            const today = new Date();
-            const weekDays = ['日', '一', '二', '三', '四', '五', '六'];
-            const dailyData = {};
-            
-            for (let i = 6; i >= 0; i--) {
-                const date = new Date(today);
-                date.setDate(date.getDate() - i);
-                const dateKey = date.toISOString().split('T')[0];
-                const dayName = weekDays[date.getDay()];
-                dailyData[dateKey] = { day: dayName, count: 0, totalScore: 0 };
-            }
-            
-            // 填充数据
-            res.data.forEach(record => {
-                const recordDate = record.start_time.split('T')[0];
-                if (dailyData[recordDate]) {
-                    dailyData[recordDate].count++;
-                    dailyData[recordDate].totalScore += record.final_score || 0;
-                }
-            });
-            
-            // 渲染图表
-            const maxCount = Math.max(...Object.values(dailyData).map(d => d.count), 1);
-            
-            let chartHtml = '<div class="chart-bars">';
-            Object.values(dailyData).forEach(d => {
-                const height = Math.max(10, (d.count / maxCount) * 80);
-                const avgScore = d.count > 0 ? Math.round(d.totalScore / d.count) : 0;
-                chartHtml += `
-                    <div style="text-align: center;">
-                        <div class="chart-bar" style="height: ${height}px;" title="${d.count}次，平均${avgScore}分"></div>
-                        <div class="chart-label">周${d.day}</div>
-                    </div>
-                `;
-            });
-            chartHtml += '</div>';
-            chartPlaceholder.innerHTML = chartHtml;
-        } else {
-            chartPlaceholder.innerHTML = '<p>暂无数据，开始学习吧！</p>';
-        }
-    } catch (err) {
-        console.error('加载周报数据失败:', err);
-    }
-}
-
-async function loadMasteryList() {
-    try {
-        // 从后端获取掌握情况
-        const res = await apiRequest('/users/mastery');
-        const masteryList = document.getElementById('mastery-list');
-        
-        if (res.data && res.data.length > 0) {
-            masteryList.innerHTML = res.data.map(item => {
-                const statusClass = item.status || 'learning';
-                const statusText = {
-                    'mastered': '已掌握',
-                    'reviewing': '复习中',
-                    'learning': '学习中'
-                }[statusClass];
-                
-                return `
-                    <div class="mastery-item">
-                        <div class="mastery-title">${item.title || '自定义内容'}</div>
-                        <div class="mastery-status ${statusClass}">${statusText}</div>
-                    </div>
-                `;
-            }).join('');
-        }
-    } catch (err) {
-        console.error('加载掌握情况失败:', err);
-        // 显示友好提示
-        const masteryList = document.getElementById('mastery-list');
-        masteryList.innerHTML = '<p style="text-align: center; color: var(--text-secondary);">暂无掌握数据</p>';
-    }
-}
-
-document.addEventListener('DOMContentLoaded', init);
-
-// 防止页面刷新时丢失数据
 window.addEventListener('beforeunload', () => {
-    // 保存必要的状态
+    saveToLocalStorage();
 });

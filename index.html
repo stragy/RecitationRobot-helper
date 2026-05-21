@@ -143,10 +143,27 @@
                 <button class="settings-btn" onclick="toggleSettings()">⚙️</button>
             </div>
             <div class="page-content">
-                <div class="progress-bar">
-                    <div class="progress-fill" id="progress-fill"></div>
+                <!-- 进度区域 -->
+                <div class="progress-section">
+                    <div class="progress-info">
+                        <span id="sentence-counter">第 1 句 / 共 1 句</span>
+                        <span id="progress-percent">0%</span>
+                    </div>
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="progress-fill"></div>
+                    </div>
                 </div>
+
+                <!-- 内容展示区 -->
                 <div class="content-display" id="content-display"></div>
+
+                <!-- 实时语音识别文字 -->
+                <div class="speech-result hidden" id="speech-result">
+                    <div class="speech-result-label">你说的是：</div>
+                    <div class="speech-result-text" id="speech-result-text"></div>
+                </div>
+
+                <!-- 语音状态指示器 -->
                 <div class="voice-indicator" id="voice-indicator">
                     <div class="voice-waves">
                         <span></span>
@@ -155,18 +172,35 @@
                         <span></span>
                         <span></span>
                     </div>
-                    <p id="voice-text">点击开始</p>
+                    <p id="voice-text">准备开始</p>
                 </div>
+
+                <!-- 麦克风控制区 -->
                 <div class="recitation-controls">
-                    <button class="mic-btn" id="mic-btn" onmousedown="startListening()" onmouseup="stopListening()" ontouchstart="startListening()" ontouchend="stopListening()">
+                    <button class="mic-btn" id="mic-btn">
                         <span class="mic-icon">🎤</span>
                     </button>
-                    <p class="mic-hint">按住说话</p>
+                    <p class="mic-hint" id="mic-hint">点击开始录音</p>
                 </div>
+
+                <!-- 控制按钮 -->
                 <div class="control-buttons">
-                    <button class="secondary-btn" onclick="repeatCurrent()">🔁 重读</button>
-                    <button class="secondary-btn" onclick="showHint()">💡 提示</button>
-                    <button class="secondary-btn" onclick="skipCurrent()">⏭️ 跳过</button>
+                    <button class="ctrl-btn" id="btn-pause" onclick="togglePause()">
+                        <span class="ctrl-icon">⏸️</span>
+                        <span class="ctrl-label">暂停</span>
+                    </button>
+                    <button class="ctrl-btn" onclick="repeatCurrent()">
+                        <span class="ctrl-icon">🔁</span>
+                        <span class="ctrl-label">重读</span>
+                    </button>
+                    <button class="ctrl-btn" id="btn-hint" onclick="showHint()">
+                        <span class="ctrl-icon">💡</span>
+                        <span class="ctrl-label">提示</span>
+                    </button>
+                    <button class="ctrl-btn" onclick="skipCurrent()">
+                        <span class="ctrl-icon">⏭️</span>
+                        <span class="ctrl-label">跳过</span>
+                    </button>
                 </div>
             </div>
         </div>

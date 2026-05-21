@@ -1,5 +1,5 @@
 /**
- * 智能背诵助手 - 核心应用逻辑
+ * 智能背诵助手 - 核心应用逻辑（优化版）
  */
 
 // ==================== 全局状态 ====================
@@ -16,11 +16,15 @@ const AppState = {
         autoNext: true
     },
     recitation: {
-        mode: 'repeat', // repeat, fill, hint, full
+        mode: 'repeat',       // repeat, fill, hint, full
         currentIndex: 0,
         results: [],
         isListening: false,
-        isSpeaking: false
+        isSpeaking: false,
+        isPaused: false,       // 新增：暂停状态
+        hintLevel: 0,          // 新增：当前提示等级（渐进提示）
+        retryCount: 0,         // 新增：当前句子重试次数
+        maxRetries: 3          // 新增：最大重试次数
     },
     history: {
         records: [],
@@ -43,7 +47,6 @@ class SpeechSynthesizer {
     }
 
     init() {
-        // 等待语音列表加载
         if (this.synth.onvoiceschanged !== undefined) {
             this.synth.onvoiceschanged = () => this.setVoice();
         }
@@ -52,7 +55,6 @@ class SpeechSynthesizer {
 
     setVoice() {
         const voices = this.synth.getVoices();
-        // 优先选择中文女声
         this.voice = voices.find(v => v.lang.includes('zh') && v.name.includes('Female')) ||
                      voices.find(v => v.lang.includes('zh')) ||
                      voices[0];
@@ -61,21 +63,22 @@ class SpeechSynthesizer {
     speak(text, onEnd = null) {
         if (!this.synth) return;
 
-        // 取消之前的语音
         this.synth.cancel();
 
         const utterance = new SpeechSynthesisUtterance(text);
         utterance.voice = this.voice;
         utterance.rate = AppState.settings.speechRate;
         utterance.volume = AppState.settings.speechVolume;
-        utterance.pitch = 1.1; // 稍微提高音调，更亲切
+        utterance.pitch = 1.1;
 
         AppState.recitation.isSpeaking = true;
         updateVoiceIndicator('speaking', text);
 
         utterance.onend = () => {
             AppState.recitation.isSpeaking = false;
-            updateVoiceIndicator('idle');
+            if (!AppState.recitation.isPaused) {
+                updateVoiceIndicator('waiting');
+            }
             if (onEnd) onEnd();
         };
 
@@ -121,7 +124,6 @@ class SpeechRecognizer {
 
     start(onResult, onEnd, onError) {
         if (!this.recognition) {
-            // 模拟语音识别（用于测试）
             simulateSpeechRecognition(onResult, onEnd);
             return;
         }
@@ -138,6 +140,8 @@ class SpeechRecognizer {
                     interimTranscript += transcript;
                 }
             }
+            // 实时更新识别文字
+            updateSpeechResult(finalTranscript || interimTranscript, !!finalTranscript);
             if (onResult) onResult(finalTranscript || interimTranscript, !!finalTranscript);
         };
 
@@ -175,13 +179,12 @@ function simulateSpeechRecognition(onResult, onEnd) {
     AppState.recitation.isListening = true;
     updateMicButton(true);
     
-    // 模拟识别延迟
     setTimeout(() => {
         const currentSentence = AppState.content.sentences[AppState.recitation.currentIndex];
-        // 随机模拟正确或错误
         const isCorrect = Math.random() > 0.3;
         const result = isCorrect ? currentSentence : currentSentence.slice(0, -2);
         
+        updateSpeechResult(result, true);
         if (onResult) onResult(result, true);
         
         setTimeout(() => {
@@ -194,12 +197,10 @@ function simulateSpeechRecognition(onResult, onEnd) {
 
 // ==================== 页面导航 ====================
 function showPage(pageId) {
-    // 隐藏所有页面
     document.querySelectorAll('.page').forEach(page => {
         page.classList.remove('active');
     });
     
-    // 显示目标页面
     const targetPage = document.getElementById(pageId + '-page');
     if (targetPage) {
         targetPage.classList.add('active');
@@ -216,7 +217,7 @@ function goHome() {
 
 function goBack() {
     if (AppState.currentPage === 'preview') {
-        showPage('text');
+        showPage('text-input');
     } else {
         goHome();
     }
@@ -255,7 +256,6 @@ function previewContent() {
 }
 
 function splitIntoSentences(text) {
-    // 按标点符号分割句子
     const sentences = text
         .replace(/([。！？；.!?;])/g, '$1\n')
         .split('\n')
@@ -329,13 +329,11 @@ function resetImage() {
 }
 
 function recognizeImage() {
-    // 模拟OCR识别
     const btn = event.target;
     btn.textContent = '识别中...';
     btn.disabled = true;
     
     setTimeout(() => {
-        // 模拟识别结果
         const mockText = '床前明月光，\n疑是地上霜。\n举头望明月，\n低头思故乡。';
         document.getElementById('ocr-text').value = mockText;
         document.getElementById('ocr-result').classList.remove('hidden');
@@ -363,21 +361,28 @@ function previewOCRContent() {
 function selectMode(mode) {
     AppState.recitation.mode = mode;
     
-    // 更新UI
     document.querySelectorAll('.mode-btn').forEach(btn => {
         btn.classList.remove('selected');
     });
     document.querySelector(`[data-mode="${mode}"]`).classList.add('selected');
 }
 
-// ==================== 背诵功能 ====================
+// ==================== 背诵功能（核心优化） ====================
+
+/**
+ * 开始背诵
+ */
 function startRecitation() {
     AppState.recitation.currentIndex = 0;
     AppState.recitation.results = [];
+    AppState.recitation.isPaused = false;
+    AppState.recitation.hintLevel = 0;
+    AppState.recitation.retryCount = 0;
     
     document.getElementById('recitation-title').textContent = AppState.content.title;
     renderRecitationContent();
     updateProgress();
+    updatePauseButton();
     
     showPage('recitation');
     
@@ -390,177 +395,371 @@ function startRecitation() {
     }, 500);
 }
 
+/**
+ * 渲染背诵内容 - 优化：聚焦当前句，折叠其他句子
+ */
 function renderRecitationContent() {
     const container = document.getElementById('content-display');
     container.innerHTML = '';
+    
+    const currentIdx = AppState.recitation.currentIndex;
+    const total = AppState.content.sentences.length;
     
     AppState.content.sentences.forEach((sentence, index) => {
         const div = document.createElement('div');
         div.className = 'sentence-item';
         div.id = `sentence-${index}`;
         
-        if (AppState.recitation.mode === 'fill' && index === AppState.recitation.currentIndex) {
-            // 填空模式：显示前半句
-            const halfLength = Math.ceil(sentence.length / 2);
-            div.innerHTML = `${sentence.slice(0, halfLength)}<span class="fill-blank">?</span>`;
-        } else if (AppState.recitation.mode === 'hint' && index === AppState.recitation.currentIndex) {
-            // 提示模式：显示首字
-            div.innerHTML = `<span class="hint-text">${sentence[0]}</span>${'▪'.repeat(sentence.length - 1)}`;
-        } else if (index < AppState.recitation.currentIndex) {
+        // 计算与当前句的距离
+        const distance = Math.abs(index - currentIdx);
+        
+        if (index === currentIdx) {
+            // 当前句 - 高亮显示
+            div.classList.add('current');
+            
+            if (AppState.recitation.mode === 'fill') {
+                // 填空模式：按标点智能断句
+                const fillContent = getFillContent(sentence, AppState.recitation.hintLevel);
+                div.innerHTML = fillContent;
+            } else if (AppState.recitation.mode === 'hint') {
+                // 提示模式：根据提示等级渐进显示
+                const hintContent = getHintContent(sentence, AppState.recitation.hintLevel);
+                div.innerHTML = hintContent;
+            } else {
+                div.textContent = sentence;
+            }
+        } else if (index < currentIdx) {
+            // 已完成的句子
+            const result = AppState.recitation.results[index];
+            div.classList.add(result && result.isCorrect ? 'completed' : 'error');
             div.textContent = sentence;
+            
+            // 距离较远的已完成句子折叠
+            if (distance > 2) {
+                div.classList.add('collapsed');
+            }
         } else {
+            // 未到的句子
             div.textContent = sentence;
+            
+            // 距离较远的未来句子折叠
+            if (distance > 2) {
+                div.classList.add('collapsed');
+            }
         }
         
         container.appendChild(div);
     });
     
-    highlightCurrentSentence();
+    // 滚动到当前句
+    const currentEl = document.getElementById(`sentence-${currentIdx}`);
+    if (currentEl) {
+        currentEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
 }
 
-function highlightCurrentSentence() {
-    document.querySelectorAll('.sentence-item').forEach((el, index) => {
-        el.classList.remove('current', 'completed', 'error');
-        if (index === AppState.recitation.currentIndex) {
-            el.classList.add('current');
-            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        } else if (index < AppState.recitation.currentIndex) {
-            const result = AppState.recitation.results[index];
-            el.classList.add(result && result.isCorrect ? 'completed' : 'error');
+/**
+ * 填空模式：按标点智能断句，支持渐进提示
+ */
+function getFillContent(sentence, hintLevel) {
+    // 找到最后一个标点符号位置
+    const punctuationMatch = sentence.match(/[，。！？、；：""''）】]/g);
+    
+    let splitPos;
+    if (punctuationMatch && punctuationMatch.length > 0) {
+        // 在中间标点处断开
+        const midPunctIdx = Math.floor(punctuationMatch.length / 2);
+        let count = 0;
+        for (let i = 0; i < sentence.length; i++) {
+            if (/[，。！？、；：""''）】]/.test(sentence[i])) {
+                if (count === midPunctIdx) {
+                    splitPos = i + 1;
+                    break;
+                }
+                count++;
+            }
         }
-    });
+    }
+    
+    if (!splitPos) {
+        splitPos = Math.ceil(sentence.length / 2);
+    }
+    
+    const prefix = sentence.slice(0, splitPos);
+    const suffix = sentence.slice(splitPos);
+    
+    if (hintLevel === 0) {
+        // 完全隐藏后半部分
+        return `${prefix}<span class="fill-blank">______</span>`;
+    } else if (hintLevel === 1) {
+        // 显示后半部分的首字
+        return `${prefix}<span class="fill-blank">${suffix[0]}...</span>`;
+    } else {
+        // 显示完整内容
+        return `${prefix}<span class="fill-blank revealed">${suffix}</span>`;
+    }
 }
 
+/**
+ * 提示模式：渐进显示内容
+ */
+function getHintContent(sentence, hintLevel) {
+    if (hintLevel === 0) {
+        // 只显示首字
+        return `<span class="hint-text">${sentence[0]}</span><span class="hint-hidden">${'▪'.repeat(sentence.length - 1)}</span>`;
+    } else if (hintLevel === 1) {
+        // 显示前1/3
+        const showLen = Math.max(1, Math.ceil(sentence.length / 3));
+        return `<span class="hint-text">${sentence.slice(0, showLen)}</span><span class="hint-hidden">${'▪'.repeat(sentence.length - showLen)}</span>`;
+    } else if (hintLevel === 2) {
+        // 显示前2/3
+        const showLen = Math.max(1, Math.ceil(sentence.length * 2 / 3));
+        return `<span class="hint-text">${sentence.slice(0, showLen)}</span><span class="hint-hidden">${'▪'.repeat(sentence.length - showLen)}</span>`;
+    } else {
+        // 完全显示
+        return `<span class="hint-text">${sentence}</span>`;
+    }
+}
+
+/**
+ * 更新进度条和句子计数
+ */
 function updateProgress() {
-    const progress = (AppState.recitation.currentIndex / AppState.content.sentences.length) * 100;
+    const currentIdx = AppState.recitation.currentIndex;
+    const total = AppState.content.sentences.length;
+    const progress = total > 0 ? (currentIdx / total) * 100 : 0;
+    
     document.getElementById('progress-fill').style.width = `${progress}%`;
+    document.getElementById('progress-percent').textContent = `${Math.round(progress)}%`;
+    document.getElementById('sentence-counter').textContent = `第 ${currentIdx + 1} 句 / 共 ${total} 句`;
 }
 
+/**
+ * 开始当前句子的朗读/提示
+ */
 function startCurrentSentence() {
+    if (AppState.recitation.isPaused) return;
+    
     const currentSentence = AppState.content.sentences[AppState.recitation.currentIndex];
     const mode = AppState.recitation.mode;
     
+    // 重置提示等级
+    AppState.recitation.hintLevel = 0;
     renderRecitationContent();
+    hideSpeechResult();
     
     if (mode === 'repeat') {
-        // 跟读模式
-        speechSynthesizer.speak(`跟我一起读：'${currentSentence}'——`, () => {
-            updateVoiceIndicator('listening');
+        speechSynthesizer.speak(`跟我一起读：${currentSentence}——`, () => {
+            updateVoiceIndicator('waiting');
         });
     } else if (mode === 'fill') {
-        // 填空模式
-        const halfLength = Math.ceil(currentSentence.length / 2);
-        const prefix = currentSentence.slice(0, halfLength);
-        speechSynthesizer.speak(`'${prefix}'，接下来是什么？`, () => {
-            updateVoiceIndicator('listening');
+        const punctuationMatch = currentSentence.match(/[，。！？、；：""''）】]/g);
+        let splitPos;
+        if (punctuationMatch && punctuationMatch.length > 0) {
+            const midPunctIdx = Math.floor(punctuationMatch.length / 2);
+            let count = 0;
+            for (let i = 0; i < currentSentence.length; i++) {
+                if (/[，。！？、；：""''）】]/.test(currentSentence[i])) {
+                    if (count === midPunctIdx) {
+                        splitPos = i + 1;
+                        break;
+                    }
+                    count++;
+                }
+            }
+        }
+        if (!splitPos) splitPos = Math.ceil(currentSentence.length / 2);
+        const prefix = currentSentence.slice(0, splitPos);
+        speechSynthesizer.speak(`${prefix}，接下来是什么？`, () => {
+            updateVoiceIndicator('waiting');
         });
     } else if (mode === 'hint') {
-        // 提示模式
-        speechSynthesizer.speak(`第一个字是'${currentSentence[0]}'，想一想后面是什么？`, () => {
-            updateVoiceIndicator('listening');
+        speechSynthesizer.speak(`第一个字是"${currentSentence[0]}"，想一想后面是什么？`, () => {
+            updateVoiceIndicator('waiting');
         });
     } else if (mode === 'full') {
-        // 完整背诵模式
         if (AppState.recitation.currentIndex === 0) {
             speechSynthesizer.speak('请开始背诵', () => {
-                updateVoiceIndicator('listening');
+                updateVoiceIndicator('waiting');
             });
         } else {
-            updateVoiceIndicator('listening');
+            updateVoiceIndicator('waiting');
         }
     }
 }
 
+/**
+ * 更新语音状态指示器 - 优化：区分更多状态
+ * @param {'speaking'|'listening'|'waiting'|'idle'|'paused'} state
+ */
 function updateVoiceIndicator(state, text = '') {
     const indicator = document.getElementById('voice-indicator');
     const voiceText = document.getElementById('voice-text');
     const waves = indicator.querySelector('.voice-waves');
     
+    // 移除所有状态类
+    waves.classList.remove('listening', 'speaking', 'waiting', 'paused');
+    indicator.classList.remove('state-speaking', 'state-listening', 'state-waiting', 'state-paused');
+    
     if (state === 'speaking') {
-        voiceText.textContent = `🎵 ${text.slice(0, 20)}...`;
-        waves.classList.remove('listening');
+        voiceText.textContent = `🔊 ${text.length > 15 ? text.slice(0, 15) + '...' : text}`;
+        waves.classList.add('speaking');
+        indicator.classList.add('state-speaking');
     } else if (state === 'listening') {
-        voiceText.textContent = '🎤 正在听...';
+        voiceText.textContent = '🎤 正在听你说...';
         waves.classList.add('listening');
+        indicator.classList.add('state-listening');
+    } else if (state === 'waiting') {
+        voiceText.textContent = '👆 点击麦克风开始';
+        waves.classList.add('waiting');
+        indicator.classList.add('state-waiting');
+    } else if (state === 'paused') {
+        voiceText.textContent = '⏸ 已暂停';
+        waves.classList.add('paused');
+        indicator.classList.add('state-paused');
     } else {
-        voiceText.textContent = '点击开始';
-        waves.classList.remove('listening');
+        voiceText.textContent = '准备开始';
     }
 }
 
+/**
+ * 更新麦克风按钮状态
+ */
 function updateMicButton(isListening) {
     const micBtn = document.getElementById('mic-btn');
+    const micHint = document.getElementById('mic-hint');
+    
     if (isListening) {
         micBtn.classList.add('listening');
+        micHint.textContent = '正在录音，再次点击结束';
     } else {
         micBtn.classList.remove('listening');
+        micHint.textContent = '点击开始录音';
     }
 }
 
-// ==================== 麦克风控制 ====================
+/**
+ * 更新实时语音识别文字显示
+ */
+function updateSpeechResult(text, isFinal) {
+    const resultDiv = document.getElementById('speech-result');
+    const resultText = document.getElementById('speech-result-text');
+    
+    resultDiv.classList.remove('hidden');
+    resultText.textContent = text;
+    resultText.classList.toggle('final', isFinal);
+}
+
+function hideSpeechResult() {
+    const resultDiv = document.getElementById('speech-result');
+    resultDiv.classList.add('hidden');
+}
+
+// ==================== 麦克风控制（优化：点击切换模式） ====================
+
+function initMicButton() {
+    const micBtn = document.getElementById('mic-btn');
+    
+    // 点击切换模式（替代原来的按住说话）
+    micBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        
+        if (AppState.recitation.isPaused) {
+            // 暂停状态下不允许录音
+            return;
+        }
+        
+        if (AppState.recitation.isListening) {
+            // 正在录音 → 停止
+            stopListening();
+        } else {
+            // 未在录音 → 开始
+            startListening();
+        }
+    });
+    
+    // 保留长按支持（兼容旧习惯）
+    micBtn.addEventListener('mousedown', (e) => {
+        // 不再需要长按逻辑，点击已足够
+    });
+}
+
 function startListening() {
+    if (AppState.recitation.isPaused) return;
+    
     if (AppState.recitation.isSpeaking) {
         speechSynthesizer.stop();
     }
     
     speechRecognizer.start(
         (text, isFinal) => {
-            // 实时识别结果
             if (isFinal) {
                 handleRecitationResult(text);
             }
         },
         (finalText) => {
-            // 识别结束
             if (finalText) {
                 handleRecitationResult(finalText);
             }
         },
         (error) => {
             console.error('识别错误:', error);
-            updateVoiceIndicator('idle');
+            updateVoiceIndicator('waiting');
         }
     );
 }
 
 function stopListening() {
     speechRecognizer.stop();
+    updateVoiceIndicator('waiting');
 }
 
+/**
+ * 处理背诵结果 - 优化：支持重试次数限制，提供选择
+ */
 function handleRecitationResult(recitedText) {
     const currentIndex = AppState.recitation.currentIndex;
     const currentSentence = AppState.content.sentences[currentIndex];
     
-    // 评估背诵结果
     const evaluation = evaluateRecitation(currentSentence, recitedText);
-    
-    // 保存结果
     AppState.recitation.results[currentIndex] = evaluation;
     
-    // 反馈
     if (evaluation.isCorrect) {
-        const encouragements = ['很好！', '不错！', '真棒！', '非常好！'];
+        // 回答正确
+        const encouragements = ['很好！', '不错！', '真棒！', '非常好！', '太厉害了！'];
         const randomEncouragement = encouragements[Math.floor(Math.random() * encouragements.length)];
         speechSynthesizer.speak(randomEncouragement, () => {
             nextSentence();
         });
     } else {
-        speechSynthesizer.speak(`接近了，应该是'${currentSentence}'，我们再来一遍~`, () => {
-            // 重新尝试当前句子
-            setTimeout(() => startCurrentSentence(), 500);
-        });
+        // 回答错误
+        AppState.recitation.retryCount++;
+        
+        if (AppState.recitation.retryCount >= AppState.recitation.maxRetries) {
+            // 超过最大重试次数，直接告诉答案并跳过
+            speechSynthesizer.speak(`没关系，正确答案是"${currentSentence}"，我们继续下一句吧！`, () => {
+                AppState.recitation.retryCount = 0;
+                nextSentence();
+            });
+        } else {
+            // 还有重试机会
+            const remaining = AppState.recitation.maxRetries - AppState.recitation.retryCount;
+            speechSynthesizer.speak(
+                `接近了，应该是"${currentSentence}"，还有${remaining}次机会，再来一遍吧！`,
+                () => {
+                    setTimeout(() => startCurrentSentence(), 500);
+                }
+            );
+        }
     }
 }
 
+// ==================== 评估逻辑 ====================
+
 function evaluateRecitation(original, recited) {
-    // 预处理文本
     const cleanOriginal = preprocessText(original);
     const cleanRecited = preprocessText(recited);
-    
-    // 计算相似度
     const similarity = calculateSimilarity(cleanOriginal, cleanRecited);
-    
-    // 准确度阈值
     const isCorrect = similarity >= 0.7;
     
     return {
@@ -580,8 +779,8 @@ function preprocessText(text) {
 }
 
 function calculateSimilarity(str1, str2) {
-    // 简化的相似度计算
     if (str1 === str2) return 1;
+    if (str1.length === 0 || str2.length === 0) return 0;
     
     const len1 = str1.length;
     const len2 = str2.length;
@@ -612,56 +811,115 @@ function calculateSimilarity(str1, str2) {
 
 function nextSentence() {
     AppState.recitation.currentIndex++;
+    AppState.recitation.retryCount = 0;
+    AppState.recitation.hintLevel = 0;
     updateProgress();
     
     if (AppState.recitation.currentIndex >= AppState.content.sentences.length) {
-        // 背诵完成
         finishRecitation();
     } else {
-        // 继续下一句
         setTimeout(() => startCurrentSentence(), 500);
     }
 }
 
 function finishRecitation() {
     const results = AppState.recitation.results;
-    const correctCount = results.filter(r => r.isCorrect).length;
+    const correctCount = results.filter(r => r && r.isCorrect).length;
     const totalCount = results.length;
     
-    // 计算总分
-    const avgAccuracy = results.reduce((sum, r) => sum + r.accuracy, 0) / totalCount;
+    const avgAccuracy = results.reduce((sum, r) => sum + (r ? r.accuracy : 0), 0) / totalCount;
     const completeness = (correctCount / totalCount) * 100;
     const score = Math.round(avgAccuracy * 0.6 + completeness * 0.4);
     
-    // 保存到历史记录
     saveRecitationRecord(score, results);
-    
-    // 显示结果
     showResult(score, results);
 }
 
-// ==================== 控制按钮 ====================
+// ==================== 控制按钮（优化） ====================
+
+/**
+ * 重读当前句
+ */
 function repeatCurrent() {
+    if (AppState.recitation.isPaused) return;
     speechSynthesizer.stop();
     speechRecognizer.stop();
+    hideSpeechResult();
     startCurrentSentence();
 }
 
+/**
+ * 渐进提示 - 优化：多次点击逐步揭示更多内容
+ */
 function showHint() {
+    if (AppState.recitation.isPaused) return;
+    
+    const maxHintLevel = 3;
+    AppState.recitation.hintLevel = Math.min(AppState.recitation.hintLevel + 1, maxHintLevel);
+    
+    renderRecitationContent();
+    
     const currentSentence = AppState.content.sentences[AppState.recitation.currentIndex];
-    speechSynthesizer.speak(`提示：${currentSentence.slice(0, 3)}...`);
+    
+    if (AppState.recitation.hintLevel >= maxHintLevel) {
+        // 已到最大提示等级，直接显示答案
+        speechSynthesizer.speak(`答案是"${currentSentence}"，记住它！`);
+    } else {
+        const hintTexts = [
+            `再想想，提示：${currentSentence.slice(0, 2)}...`,
+            `再提示一下：${currentSentence.slice(0, Math.ceil(currentSentence.length / 2))}...`,
+            `最后一个提示：${currentSentence.slice(0, Math.ceil(currentSentence.length * 2 / 3))}...`
+        ];
+        speechSynthesizer.speak(hintTexts[AppState.recitation.hintLevel - 1] || hintTexts[0]);
+    }
 }
 
+/**
+ * 跳过当前句
+ */
 function skipCurrent() {
+    speechSynthesizer.stop();
+    speechRecognizer.stop();
+    hideSpeechResult();
+    
     const currentSentence = AppState.content.sentences[AppState.recitation.currentIndex];
     AppState.recitation.results[AppState.recitation.currentIndex] = {
         original: currentSentence,
-        recited: '',
+        recited: '（已跳过）',
         similarity: 0,
         isCorrect: false,
         accuracy: 0
     };
     nextSentence();
+}
+
+/**
+ * 暂停/继续 - 新增功能
+ */
+function togglePause() {
+    AppState.recitation.isPaused = !AppState.recitation.isPaused;
+    updatePauseButton();
+    
+    if (AppState.recitation.isPaused) {
+        speechSynthesizer.stop();
+        speechRecognizer.stop();
+        updateVoiceIndicator('paused');
+    } else {
+        updateVoiceIndicator('waiting');
+        // 恢复后重新开始当前句
+        startCurrentSentence();
+    }
+}
+
+function updatePauseButton() {
+    const btn = document.getElementById('btn-pause');
+    if (AppState.recitation.isPaused) {
+        btn.innerHTML = '<span class="ctrl-icon">▶️</span><span class="ctrl-label">继续</span>';
+        btn.classList.add('active');
+    } else {
+        btn.innerHTML = '<span class="ctrl-icon">⏸️</span><span class="ctrl-label">暂停</span>';
+        btn.classList.remove('active');
+    }
 }
 
 function confirmExit() {
@@ -676,6 +934,7 @@ function confirmExitRecitation() {
     closeExitModal();
     speechSynthesizer.stop();
     speechRecognizer.stop();
+    AppState.recitation.isPaused = false;
     goHome();
 }
 
@@ -689,7 +948,6 @@ function closeSettings() {
     document.getElementById('settings-modal').classList.add('hidden');
 }
 
-// 设置监听器
 document.getElementById('speech-rate')?.addEventListener('input', (e) => {
     AppState.settings.speechRate = parseFloat(e.target.value);
     document.getElementById('rate-value').textContent = e.target.value;
@@ -708,19 +966,15 @@ document.getElementById('auto-next')?.addEventListener('change', (e) => {
 function showResult(score, results) {
     showPage('result');
     
-    // 动画显示分数
     animateScore(score);
     
-    // 显示星星
     const stars = calculateStars(score);
     document.getElementById('stars').textContent = stars;
     
-    // 显示评语
     document.getElementById('result-comment').textContent = getComment(score);
     
-    // 显示详细分析
-    const correctCount = results.filter(r => r.isCorrect).length;
-    const avgAccuracy = results.reduce((sum, r) => sum + r.accuracy, 0) / results.length;
+    const correctCount = results.filter(r => r && r.isCorrect).length;
+    const avgAccuracy = results.reduce((sum, r) => sum + (r ? r.accuracy : 0), 0) / results.length;
     
     document.getElementById('accuracy-value').textContent = Math.round(avgAccuracy) + '%';
     document.getElementById('accuracy-bar').style.width = avgAccuracy + '%';
@@ -729,15 +983,12 @@ function showResult(score, results) {
     document.getElementById('completeness-value').textContent = Math.round(completeness) + '%';
     document.getElementById('completeness-bar').style.width = completeness + '%';
     
-    // 模拟流畅度
     const fluency = Math.min(100, score + Math.random() * 20 - 10);
     document.getElementById('fluency-value').textContent = Math.round(fluency) + '%';
     document.getElementById('fluency-bar').style.width = fluency + '%';
     
-    // 显示错误分析
     renderErrorAnalysis(results);
     
-    // 播放结束语音
     const closingText = getClosingText(score);
     setTimeout(() => {
         speechSynthesizer.speak(closingText);
@@ -785,18 +1036,19 @@ function renderErrorAnalysis(results) {
     const errorList = document.getElementById('error-list');
     errorList.innerHTML = '';
     
-    const errors = results.filter(r => !r.isCorrect);
+    const errors = results.filter(r => r && !r.isCorrect);
     
     if (errors.length === 0) {
         errorList.innerHTML = '<p style="color: var(--success-color);">🎉 太棒了！没有错误！</p>';
         return;
     }
     
-    errors.forEach((error, index) => {
+    errors.forEach((error) => {
+        const idx = results.indexOf(error);
         const div = document.createElement('div');
         div.className = 'error-item';
         div.innerHTML = `
-            <div>第${results.indexOf(error) + 1}句</div>
+            <div>第${idx + 1}句</div>
             <div>正确：<span class="expected">${error.original}</span></div>
             <div>你的：<span class="actual">${error.recited || '（未识别）'}</span></div>
         `;
@@ -826,14 +1078,10 @@ function saveRecitationRecord(score, results) {
     AppState.history.stats.totalCount++;
     AppState.history.stats.todayCount++;
     
-    // 更新平均分
     const totalScore = AppState.history.records.reduce((sum, r) => sum + r.score, 0);
     AppState.history.stats.avgScore = Math.round(totalScore / AppState.history.records.length);
     
-    // 检查成就
     checkAchievements();
-    
-    // 保存到本地存储
     saveToLocalStorage();
 }
 
@@ -858,12 +1106,10 @@ function checkAchievements() {
 }
 
 function renderHistory() {
-    // 更新统计
     document.getElementById('total-count').textContent = AppState.history.stats.totalCount;
     document.getElementById('avg-score').textContent = AppState.history.stats.avgScore;
     document.getElementById('streak-days').textContent = AppState.history.stats.streakDays;
     
-    // 渲染成就
     const achievementList = document.getElementById('achievement-list');
     achievementList.innerHTML = '';
     
@@ -885,7 +1131,6 @@ function renderHistory() {
         achievementList.appendChild(div);
     });
     
-    // 渲染历史记录
     const historyItems = document.getElementById('history-items');
     historyItems.innerHTML = '';
     
@@ -933,12 +1178,12 @@ function loadFromLocalStorage() {
 document.addEventListener('DOMContentLoaded', () => {
     loadFromLocalStorage();
     updateHomeStats();
-    
-    // 默认选择跟读模式
     selectMode('repeat');
+    
+    // 初始化麦克风按钮（点击切换模式）
+    initMicButton();
 });
 
-// 防止页面刷新时丢失数据
 window.addEventListener('beforeunload', () => {
     saveToLocalStorage();
 });
