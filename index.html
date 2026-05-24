@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>智能背诵助手</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <!-- 应用容器 -->
+    <div id="app">
+        <!-- 首页 -->
+        <div id="home-page" class="page active">
+            <div class="home-header">
+                <div class="mascot">🎓</div>
+                <h1>智能背诵助手</h1>
+                <p class="subtitle">你的专属背诵小老师</p>
+            </div>
+            
+            <div class="home-content">
+                <div class="input-options">
+                    <button class="option-btn" onclick="showTextInput()">
+                        <span class="icon">📋</span>
+                        <span class="text">粘贴文字</span>
+                        <span class="desc">直接输入或粘贴课文内容</span>
+                    </button>
+                    
+                    <button class="option-btn" onclick="showImageInput()">
+                        <span class="icon">📷</span>
+                        <span class="text">拍照识图</span>
+                        <span class="desc">拍摄课本自动识别文字</span>
+                    </button>
+                    
+                    <button class="option-btn" onclick="showHistory()">
+                        <span class="icon">📚</span>
+                        <span class="text">我的背诵</span>
+                        <span class="desc">查看学习记录和成就</span>
+                    </button>
+                </div>
+            </div>
+            
+            <div class="home-footer">
+                <div class="stats">
+                    <span class="stat-item">
+                        <span class="stat-icon">🏆</span>
+                        <span class="stat-text">今日已背诵 <strong id="today-count">0</strong> 篇</span>
+                    </span>
+                </div>
+            </div>
+        </div>
+
+        <!-- 文字输入页 -->
+        <div id="text-input-page" class="page">
+            <div class="page-header">
+                <button class="back-btn" onclick="goHome()">←</button>
+                <h2>粘贴文字</h2>
+                <div class="placeholder"></div>
+            </div>
+            <div class="page-content">
+                <div class="input-section">
+                    <label>课文内容</label>
+                    <textarea id="content-text" placeholder="在这里粘贴或输入要背诵的内容..."></textarea>
+                </div>
+                <button class="primary-btn" onclick="previewContent()">开始背诵</button>
+            </div>
+        </div>
+
+        <!-- 图片输入页 -->
+        <div id="image-input-page" class="page">
+            <div class="page-header">
+                <button class="back-btn" onclick="goHome()">←</button>
+                <h2>拍照识图</h2>
+                <div class="placeholder"></div>
+            </div>
+            <div class="page-content">
+                <div class="upload-area" id="upload-area">
+                    <div class="upload-icon">📷</div>
+                    <p>点击上传图片或拖拽到此处</p>
+                    <p class="upload-hint">支持 JPG、PNG 格式</p>
+                    <input type="file" id="image-input" accept="image/*" hidden>
+                </div>
+                <div id="image-preview" class="image-preview hidden">
+                    <img id="preview-img" src="" alt="预览">
+                    <div class="preview-actions">
+                        <button class="secondary-btn" onclick="resetImage()">重新选择</button>
+                        <button class="primary-btn" onclick="recognizeImage()">识别文字</button>
+                    </div>
+                </div>
+                <div id="ocr-result" class="ocr-result hidden">
+                    <div class="input-section">
+                        <label>识别结果</label>
+                        <textarea id="ocr-text" placeholder="识别结果将显示在这里..."></textarea>
+                    </div>
+                    <button class="primary-btn" onclick="previewOCRContent()">开始背诵</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 内容预览页 -->
+        <div id="preview-page" class="page">
+            <div class="page-header">
+                <button class="back-btn" onclick="goBack()">←</button>
+                <h2 id="preview-title">内容预览</h2>
+                <div class="placeholder"></div>
+            </div>
+            <div class="page-content">
+                <div class="content-preview" id="content-preview"></div>
+                <div class="mode-selection">
+                    <h3>选择背诵模式</h3>
+                    <div class="mode-options">
+                        <button class="mode-btn" data-mode="repeat" onclick="selectMode('repeat')">
+                            <span class="mode-icon">🔊</span>
+                            <span class="mode-name">跟读模式</span>
+                            <span class="mode-desc">老师带读，你跟读</span>
+                        </button>
+                        <button class="mode-btn" data-mode="fill" onclick="selectMode('fill')">
+                            <span class="mode-icon">✏️</span>
+                            <span class="mode-name">填空模式</span>
+                            <span class="mode-desc">补充后半句</span>
+                        </button>
+                        <button class="mode-btn" data-mode="hint" onclick="selectMode('hint')">
+                            <span class="mode-icon">💡</span>
+                            <span class="mode-name">提示模式</span>
+                            <span class="mode-desc">首字提示</span>
+                        </button>
+                        <button class="mode-btn" data-mode="full" onclick="selectMode('full')">
+                            <span class="mode-icon">🎯</span>
+                            <span class="mode-name">完整背诵</span>
+                            <span class="mode-desc">独立背诵检测</span>
+                        </button>
+                    </div>
+                </div>
+                <button class="primary-btn" onclick="startRecitation()">开始</button>
+            </div>
+        </div>
+
+        <!-- 背诵页 -->
+        <div id="recitation-page" class="page">
+            <div class="page-header">
+                <button class="back-btn" onclick="confirmExit()">←</button>
+                <h2 id="recitation-title">背诵中</h2>
+                <button class="settings-btn" onclick="toggleSettings()">⚙️</button>
+            </div>
+            <div class="page-content">
+                <!-- 进度区域 -->
+                <div class="progress-section">
+                    <div class="progress-info">
+                        <span id="sentence-counter">第 1 句 / 共 1 句</span>
+                        <span id="progress-percent">0%</span>
+                    </div>
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="progress-fill"></div>
+                    </div>
+                </div>
+
+                <!-- 内容展示区 -->
+                <div class="content-display" id="content-display"></div>
+
+                <!-- 实时语音识别文字 -->
+                <div class="speech-result hidden" id="speech-result">
+                    <div class="speech-result-label">你说的是：</div>
+                    <div class="speech-result-text" id="speech-result-text"></div>
+                </div>
+
+                <!-- 语音状态指示器 -->
+                <div class="voice-indicator" id="voice-indicator">
+                    <div class="voice-waves">
+                        <span></span>
+                        <span></span>
+                        <span></span>
+                        <span></span>
+                        <span></span>
+                    </div>
+                    <p id="voice-text">准备开始</p>
+                </div>
+
+                <!-- 麦克风控制区 -->
+                <div class="recitation-controls">
+                    <button class="mic-btn" id="mic-btn">
+                        <span class="mic-icon">🎤</span>
+                    </button>
+                    <p class="mic-hint" id="mic-hint">点击开始录音</p>
+                </div>
+
+                <!-- 控制按钮 -->
+                <div class="control-buttons">
+                    <button class="ctrl-btn" id="btn-pause" onclick="togglePause()">
+                        <span class="ctrl-icon">⏸️</span>
+                        <span class="ctrl-label">暂停</span>
+                    </button>
+                    <button class="ctrl-btn" onclick="repeatCurrent()">
+                        <span class="ctrl-icon">🔁</span>
+                        <span class="ctrl-label">重读</span>
+                    </button>
+                    <button class="ctrl-btn" id="btn-hint" onclick="showHint()">
+                        <span class="ctrl-icon">💡</span>
+                        <span class="ctrl-label">提示</span>
+                    </button>
+                    <button class="ctrl-btn" onclick="skipCurrent()">
+                        <span class="ctrl-icon">⏭️</span>
+                        <span class="ctrl-label">跳过</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 结果页 -->
+        <div id="result-page" class="page">
+            <div class="page-header">
+                <button class="back-btn" onclick="goHome()">←</button>
+                <h2>背诵结果</h2>
+                <div class="placeholder"></div>
+            </div>
+            <div class="page-content">
+                <div class="result-card">
+                    <div class="score-display">
+                        <div class="score-circle">
+                            <span class="score-number" id="score-number">0</span>
+                            <span class="score-label">分</span>
+                        </div>
+                        <div class="stars" id="stars"></div>
+                    </div>
+                    <p class="result-comment" id="result-comment"></p>
+                </div>
+                
+                <div class="result-details">
+                    <h3>详细分析</h3>
+                    <div class="detail-item">
+                        <span class="detail-label">准确度</span>
+                        <div class="detail-bar">
+                            <div class="detail-fill" id="accuracy-bar"></div>
+                        </div>
+                        <span class="detail-value" id="accuracy-value">0%</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="detail-label">完整度</span>
+                        <div class="detail-bar">
+                            <div class="detail-fill" id="completeness-bar"></div>
+                        </div>
+                        <span class="detail-value" id="completeness-value">0%</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="detail-label">流畅度</span>
+                        <div class="detail-bar">
+                            <div class="detail-fill" id="fluency-bar"></div>
+                        </div>
+                        <span class="detail-value" id="fluency-value">0%</span>
+                    </div>
+                </div>
+
+                <div class="error-analysis" id="error-analysis">
+                    <h3>错误分析</h3>
+                    <div id="error-list"></div>
+                </div>
+
+                <div class="result-actions">
+                    <button class="secondary-btn" onclick="retryRecitation()">重新背诵</button>
+                    <button class="primary-btn" onclick="saveResult()">保存记录</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 历史记录页 -->
+        <div id="history-page" class="page">
+            <div class="page-header">
+                <button class="back-btn" onclick="goHome()">←</button>
+                <h2>我的背诵</h2>
+                <div class="placeholder"></div>
+            </div>
+            <div class="page-content">
+                <div class="stats-cards">
+                    <div class="stat-card">
+                        <span class="stat-number" id="total-count">0</span>
+                        <span class="stat-label">累计背诵</span>
+                    </div>
+                    <div class="stat-card">
+                        <span class="stat-number" id="avg-score">0</span>
+                        <span class="stat-label">平均分</span>
+                    </div>
+                    <div class="stat-card">
+                        <span class="stat-number" id="streak-days">0</span>
+                        <span class="stat-label">连续天数</span>
+                    </div>
+                </div>
+
+                <div class="achievements">
+                    <h3>我的成就</h3>
+                    <div class="achievement-list" id="achievement-list"></div>
+                </div>
+
+                <div class="history-list">
+                    <h3>背诵记录</h3>
+                    <div id="history-items"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 设置弹窗 -->
+        <div id="settings-modal" class="modal hidden">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>设置</h3>
+                    <button class="close-btn" onclick="closeSettings()">×</button>
+                </div>
+                <div class="modal-body">
+                    <div class="setting-item">
+                        <label>语言</label>
+                        <select id="language-select" class="setting-select">
+                            <option value="auto">自动检测</option>
+                            <option value="zh-CN">中文</option>
+                            <option value="en-US">English</option>
+                        </select>
+                    </div>
+                    <div class="setting-item">
+                        <label>语音语速</label>
+                        <input type="range" id="speech-rate" min="0.5" max="1.5" step="0.1" value="0.9">
+                        <span id="rate-value">0.9</span>
+                    </div>
+                    <div class="setting-item">
+                        <label>语音音量</label>
+                        <input type="range" id="speech-volume" min="0" max="1" step="0.1" value="1">
+                        <span id="volume-value">100%</span>
+                    </div>
+                    <div class="setting-item">
+                        <label>自动播放下一句</label>
+                        <label class="switch">
+                            <input type="checkbox" id="auto-next" checked>
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="secondary-btn" onclick="closeSettings()">取消</button>
+                    <button class="primary-btn" onclick="closeSettings()">确定</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 退出确认弹窗 -->
+        <div id="exit-modal" class="modal hidden">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>确认退出</h3>
+                </div>
+                <div class="modal-body">
+                    <p>确定要退出当前背诵吗？进度将不会保存。</p>
+                </div>
+                <div class="modal-footer">
+                    <button class="secondary-btn" onclick="closeExitModal()">继续背诵</button>
+                    <button class="primary-btn" onclick="confirmExitRecitation()">退出</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
