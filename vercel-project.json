@@ -1,0 +1,19 @@
+{
+  "orgId": "team_anonymous",
+  "projectId": "prj_recitation-helper",
+  "settings": {
+    "framework": null,
+    "buildCommand": null,
+    "outputDirectory": ".",
+    "installCommand": null,
+    "devCommand": null,
+    "rootDirectory": null,
+    "nodeVersion": "18.x",
+    "regions": ["sin1"],
+    "git": {
+      "deploymentEnabled": {
+        "main": true
+      }
+    }
+  }
+}
