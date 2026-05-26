@@ -354,6 +354,16 @@
         </div>
     </div>
 
-    <script src="app.js"></script>
+    <!-- Tesseract.js OCR 引擎 -->
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+    <!-- 按依赖顺序加载：config → audio/asr → evaluation → api → ui → modes → app -->
+    <script src="js/config.js"></script>
+    <script src="js/audio.js"></script>
+    <script src="js/asr.js"></script>
+    <script src="js/evaluation.js"></script>
+    <script src="js/api.js"></script>
+    <script src="js/ui.js"></script>
+    <script src="js/modes.js"></script>
+    <script src="js/app.js"></script>
 </body>
 </html>

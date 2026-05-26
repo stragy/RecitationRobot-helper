@@ -12,6 +12,11 @@ const path = require('path');
 const { WebSocketServer } = require('ws');
 const http = require('http');
 
+// 导入工具
+const { createLogger } = require('./utils/logger');
+const { initDatabase } = require('./db/database');
+const { initDatabase: initSeedData } = require('./seed');
+
 // 导入路由
 const authRoutes = require('./routes/auth');
 const userRoutes = require('./routes/user');
@@ -25,14 +30,23 @@ const asrRoutes = require('./routes/asr');
 const { errorHandler } = require('./middleware/error');
 const { requestLogger } = require('./middleware/logger');
 
-// 导入数据库
-const { initDatabase } = require('./db/database');
+// 创建日志器
+const logger = createLogger('Server');
 
 const app = express();
 const server = http.createServer(app);
 
 // 初始化数据库
-initDatabase();
+try {
+  initDatabase();
+  // 初始化种子数据
+  const db = require('./db/database');
+  initSeedData(db);
+  logger.info('数据库初始化完成');
+} catch (error) {
+  logger.error('数据库初始化失败', error);
+  process.exit(1);
+}
 
 // 中间件配置
 app.use(helmet({
@@ -88,19 +102,19 @@ app.use(errorHandler);
 const wss = new WebSocketServer({ server, path: '/ws' });
 
 wss.on('connection', (ws, req) => {
-  console.log('WebSocket client connected');
+  logger.info('WebSocket client connected', { ip: req.socket.remoteAddress });
   
   ws.on('message', (data) => {
     try {
       const message = JSON.parse(data.toString());
       handleWebSocketMessage(ws, message);
     } catch (err) {
-      console.error('WebSocket message error:', err);
+      logger.error('WebSocket message error', err);
     }
   });
   
   ws.on('close', () => {
-    console.log('WebSocket client disconnected');
+    logger.info('WebSocket client disconnected');
   });
   
   // 发送欢迎消息
@@ -150,10 +164,10 @@ async function handleRealtimeRecite(ws, payload) {
 // 启动服务器
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-  console.log(`
+  logger.info(`
 ╔════════════════════════════════════════════════════════════╗
 ║                                                              ║
-║   🎓 爱背诵 - 智能背诵助手后端服务已启动                      ║
+║   爱背诵 - 智能背诵助手后端服务已启动                      ║
 ║                                                              ║
 ║   服务地址: http://localhost:${PORT}                           ║
 ║   API文档:  http://localhost:${PORT}/api/health               ║

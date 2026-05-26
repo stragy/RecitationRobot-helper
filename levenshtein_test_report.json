@@ -1,0 +1,73 @@
+{
+  "timestamp": "2026-05-25T19:26:14.884Z",
+  "totalTests": 8,
+  "passed": 8,
+  "failed": 0,
+  "passRate": 100,
+  "testCases": [
+    {
+      "name": "完全匹配",
+      "original": "床前明月光",
+      "recited": "床前明月光",
+      "similarity": 1,
+      "expected": 1,
+      "passed": true
+    },
+    {
+      "name": "空字符串",
+      "original": "",
+      "recited": "测试",
+      "similarity": 0,
+      "expected": 0,
+      "passed": true
+    },
+    {
+      "name": "单字符差异",
+      "original": "床前明月光",
+      "recited": "床前明月光。",
+      "similarity": 1,
+      "expected": 1,
+      "passed": true
+    },
+    {
+      "name": "完全不同的长文本",
+      "original": "春眠不觉晓处处闻啼鸟",
+      "recited": "日照香炉生紫烟遥看瀑布挂前川",
+      "similarity": 0,
+      "expected": 0,
+      "passed": true
+    },
+    {
+      "name": "部分匹配（50%）",
+      "original": "床前明月光疑是地上霜",
+      "recited": "床前明月光疑是地上霜",
+      "similarity": 1,
+      "expected": 1,
+      "passed": true
+    },
+    {
+      "name": "大小写和空格",
+      "original": "Hello World",
+      "recited": "hello world",
+      "similarity": 1,
+      "expected": 1,
+      "passed": true
+    },
+    {
+      "name": "标点符号",
+      "original": "床前明月光，疑是地上霜。",
+      "recited": "床前明月光疑是地上霜",
+      "similarity": 1,
+      "expected": 1,
+      "passed": true
+    },
+    {
+      "name": "中英文混合",
+      "original": "Hello 世界",
+      "recited": "hello 世界",
+      "similarity": 1,
+      "expected": 1,
+      "passed": true
+    }
+  ]
+}

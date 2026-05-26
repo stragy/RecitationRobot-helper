@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>模块化测试 - 爱背诵项目</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        h1 {
+            color: #333;
+            border-bottom: 2px solid #4a90e2;
+            padding-bottom: 10px;
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        .test-result {
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 3px;
+        }
+        .success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .warning {
+            background-color: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+        }
+        button {
+            background-color: #4a90e2;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background-color: #357abd;
+        }
+        .module-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 10px;
+            margin: 20px 0;
+        }
+        .module-item {
+            padding: 10px;
+            border: 1px solid #e0e0e0;
+            border-radius: 4px;
+            background-color: #f9f9f9;
+        }
+        .module-name {
+            font-weight: bold;
+            color: #4a90e2;
+        }
+        .module-size {
+            font-size: 12px;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <h1>爱背诵项目模块化改造测试</h1>
+    
+    <div class="test-section">
+        <h2>模块文件检查</h2>
+        <div id="module-check" class="test-result"></div>
+        <button onclick="checkModules()">检查模块文件</button>
+    </div>
+    
+    <div class="test-section">
+        <h2>模块依赖测试</h2>
+        <div id="dependency-test" class="test-result"></div>
+        <button onclick="testDependencies()">测试模块依赖</button>
+    </div>
+    
+    <div class="test-section">
+        <h2>全局函数测试</h2>
+        <div id="function-test" class="test-result"></div>
+        <button onclick="testGlobalFunctions()">测试全局函数</button>
+    </div>
+    
+    <div class="test-section">
+        <h2>OCR功能测试</h2>
+        <div id="ocr-test" class="test-result"></div>
+        <button onclick="testOCRFunction()">测试OCR函数</button>
+    </div>
+    
+    <div class="test-section">
+        <h2>已创建的模块</h2>
+        <div id="module-list" class="module-list"></div>
+    </div>
+
+    <script>
+        // 模块文件列表
+        const modules = [
+            { name: 'config.js', path: 'js/config.js', description: '配置常量模块' },
+            { name: 'audio.js', path: 'js/audio.js', description: '语音TTS/录音模块' },
+            { name: 'asr.js', path: 'js/asr.js', description: '语音识别模块' },
+            { name: 'ui.js', path: 'js/ui.js', description: 'DOM操作和UI更新模块' },
+            { name: 'modes.js', path: 'js/modes.js', description: '四种背诵模式逻辑模块' },
+            { name: 'evaluation.js', path: 'js/evaluation.js', description: '背诵评估模块' },
+            { name: 'api.js', path: 'js/api.js', description: '后端API调用封装模块' },
+            { name: 'app.js', path: 'js/app.js', description: '主入口模块' }
+        ];
+
+        // 显示模块列表
+        function displayModuleList() {
+            const container = document.getElementById('module-list');
+            container.innerHTML = '';
+            
+            modules.forEach(module => {
+                const div = document.createElement('div');
+                div.className = 'module-item';
+                div.innerHTML = `
+                    <div class="module-name">${module.name}</div>
+                    <div class="module-size" id="size-${module.name}">加载中...</div>
+                    <div>${module.description}</div>
+                `;
+                container.appendChild(div);
+                
+                // 获取文件大小
+                fetch(module.path)
+                    .then(response => {
+                        if (response.ok) {
+                            return response.text();
+                        }
+                        throw new Error('文件不存在');
+                    })
+                    .then(text => {
+                        const size = (text.length / 1024).toFixed(2);
+                        document.getElementById(`size-${module.name}`).textContent = `${size} KB`;
+                    })
+                    .catch(error => {
+                        document.getElementById(`size-${module.name}`).textContent = '未找到';
+                        document.getElementById(`size-${module.name}`).style.color = 'red';
+                    });
+            });
+        }
+
+        // 检查模块文件
+        async function checkModules() {
+            const resultDiv = document.getElementById('module-check');
+            resultDiv.innerHTML = '';
+            resultDiv.className = 'test-result';
+            
+            let allExist = true;
+            const results = [];
+            
+            for (const module of modules) {
+                try {
+                    const response = await fetch(module.path);
+                    if (response.ok) {
+                        results.push(`✅ ${module.name} 存在`);
+                    } else {
+                        results.push(`❌ ${module.name} 不存在`);
+                        allExist = false;
+                    }
+                } catch (error) {
+                    results.push(`❌ ${module.name} 加载失败: ${error.message}`);
+                    allExist = false;
+                }
+            }
+            
+            resultDiv.innerHTML = results.join('<br>');
+            resultDiv.className = allExist ? 'test-result success' : 'test-result error';
+        }
+
+        // 测试模块依赖
+        function testDependencies() {
+            const resultDiv = document.getElementById('dependency-test');
+            resultDiv.innerHTML = '';
+            resultDiv.className = 'test-result';
+            
+            const dependencies = {
+                'AppState': typeof AppState !== 'undefined',
+                'SpeechSynthesizer': typeof SpeechSynthesizer !== 'undefined',
+                'SpeechRecognizer': typeof SpeechRecognizer !== 'undefined',
+                'UI': typeof UI !== 'undefined',
+                'Modes': typeof Modes !== 'undefined',
+                'Evaluation': typeof Evaluation !== 'undefined',
+                'API': typeof API !== 'undefined'
+            };
+            
+            const results = [];
+            let allPassed = true;
+            
+            for (const [name, exists] of Object.entries(dependencies)) {
+                if (exists) {
+                    results.push(`✅ ${name} 已定义`);
+                } else {
+                    results.push(`❌ ${name} 未定义`);
+                    allPassed = false;
+                }
+            }
+            
+            resultDiv.innerHTML = results.join('<br>');
+            resultDiv.className = allPassed ? 'test-result success' : 'test-result error';
+        }
+
+        // 测试全局函数
+        function testGlobalFunctions() {
+            const resultDiv = document.getElementById('function-test');
+            resultDiv.innerHTML = '';
+            resultDiv.className = 'test-result';
+            
+            const functions = [
+                'startRecitation',
+                'evaluateRecitation',
+                'recognizeImage',
+                'selectMode',
+                'goHome',
+                'saveToLocalStorage',
+                'showResult',
+                'saveRecitationRecord'
+            ];
+            
+            const results = [];
+            let allPassed = true;
+            
+            functions.forEach(funcName => {
+                if (typeof window[funcName] === 'function') {
+                    results.push(`✅ ${funcName}() 函数存在`);
+                } else {
+                    results.push(`❌ ${funcName}() 函数不存在`);
+                    allPassed = false;
+                }
+            });
+            
+            resultDiv.innerHTML = results.join('<br>');
+            resultDiv.className = allPassed ? 'test-result success' : 'test-result error';
+        }
+
+        // 测试OCR函数
+        function testOCRFunction() {
+            const resultDiv = document.getElementById('ocr-test');
+            resultDiv.innerHTML = '';
+            resultDiv.className = 'test-result';
+            
+            if (typeof recognizeImage === 'function') {
+                resultDiv.innerHTML = '✅ recognizeImage() 函数存在<br>';
+                
+                // 检查Tesseract.js
+                if (typeof Tesseract !== 'undefined') {
+                    resultDiv.innerHTML += '✅ Tesseract.js 已加载<br>';
+                    resultDiv.innerHTML += '✅ OCR功能已实现（浏览器端）';
+                    resultDiv.className = 'test-result success';
+                } else {
+                    resultDiv.innerHTML += '⚠️ Tesseract.js 未加载（可能使用后端OCR）';
+                    resultDiv.className = 'test-result warning';
+                }
+            } else {
+                resultDiv.innerHTML = '❌ recognizeImage() 函数不存在';
+                resultDiv.className = 'test-result error';
+            }
+        }
+
+        // 页面加载时显示模块列表
+        window.onload = function() {
+            displayModuleList();
+            checkModules();
+        };
+    </script>
+</body>
+</html>

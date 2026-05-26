@@ -220,50 +220,212 @@ function buildSystemPrompt(profile) {
 - 每次回复不超过100字`;
 }
 
-// 生成默认讲解
+// 生成默认讲解（更自然的教师风格）
 function generateDefaultExplanation(content) {
-  return `📚 《${content.title}》讲解
+  const title = content.title || '这篇内容';
+  const translation = content.translation || '';
+  const background = content.background || '';
+  const type = content.type || '';
+  
+  // 根据内容类型生成不同的讲解
+  if (type.includes('english')) {
+    return `📚 《${title}》讲解
 
-${content.translation || '这首诗描绘了一幅美丽的画面。'}
+${translation ? `中文翻译：${translation}\n` : ''}
+${background ? `背景知识：${background}\n` : ''}
 
-${content.background || '诗人通过这首诗表达了自己的情感。'}
+💡 记忆技巧：
+- 先理解英文意思，再记忆原文
+- 注意发音和语调，朗读有助于记忆
+- 可以分段记忆，先记住关键词
+- 尝试用自己的话复述一遍
+
+加油，你一定可以背下来的！`;
+  }
+  
+  return `📚 《${title}》讲解
+
+${translation ? `译文：${translation}\n` : ''}
+${background ? `背景：${background}\n` : ''}
 
 💡 记忆技巧：
 - 先理解意思，再记忆文字
 - 可以想象画面帮助记忆
 - 分段记忆，最后串联起来
+- 注意押韵和节奏
 
 加油，你一定可以背下来的！`;
 }
 
+// 增强的关键词匹配库
+const KEYWORD_RESPONSES = {
+  // 困难相关
+  '不会': [
+    '没关系，我们慢慢来。先理解意思，再一句句记忆。你觉得哪部分最难？',
+    '别担心，每个人学习都会有困难的时候。我们可以先分析一下难点在哪里。',
+    '遇到困难是正常的，这说明你在进步。我们可以从简单的部分开始。'
+  ],
+  '难': [
+    '这部分确实有点难度，我们可以把它拆分成小段来学习。',
+    '觉得难说明你在挑战自己，这是很好的学习态度。',
+    '我们可以换个角度来理解，比如想象一下诗中的画面。'
+  ],
+  '记不住': [
+    '记忆需要时间，我们可以用一些记忆技巧，比如联想记忆法。',
+    '试试分段记忆，先记住第一句，再慢慢增加。',
+    '可以多读几遍，培养语感，记忆会更自然。'
+  ],
+  '忘记': [
+    '忘记是正常的，这正是复习的好时机。',
+    '没关系，我们再来一遍，这次会记得更牢。',
+    '可以试试把内容编成一个小故事，这样更容易记住。'
+  ],
+  
+  // 提示相关
+  '提示': [
+    '好的，让我给你一些提示。先从第一个字开始想...',
+    '提示：注意押韵和节奏，这有助于回忆。',
+    '可以想想上一句是什么，这有助于连接记忆。'
+  ],
+  'hint': [
+    'Let me give you a hint: think about the first word...',
+    'Hint: pay attention to the rhythm and rhyme.',
+    'Try to recall the previous sentence to connect your memory.'
+  ],
+  
+  // 完成相关
+  '背完了': [
+    '太棒了！你真的很努力！要继续保持哦~ 💪',
+    '恭喜你完成了背诵！你的坚持值得表扬！',
+    '做得非常好！记得定期复习，让记忆更牢固。'
+  ],
+  '完成了': [
+    '任务完成得很棒！给自己一点鼓励吧！',
+    '完成得很好！学习是一个持续的过程，继续保持！',
+    '为你感到骄傲！每一次完成都是进步。'
+  ],
+  
+  // 疲劳相关
+  '累了': [
+    '辛苦了！学习也要注意劳逸结合，休息一下再来吧~ 😊',
+    '累了就休息一下，学习需要劳逸结合。',
+    '休息是为了更好的学习，放松一下再继续。'
+  ],
+  '休息': [
+    '好的，休息一下吧。学习需要张弛有度。',
+    '休息是必要的，可以听听音乐或者活动一下。',
+    '适当休息可以提高学习效率，休息好了再继续。'
+  ],
+  
+  // 鼓励相关
+  '加油': [
+    '加油！我相信你可以的！',
+    '继续努力，你离成功越来越近了！',
+    '坚持就是胜利，加油！'
+  ],
+  '鼓励': [
+    '你做得很好，继续保持！',
+    '每一次尝试都是进步，为你点赞！',
+    '学习需要耐心，你已经做得很棒了！'
+  ],
+  
+  // 问题相关
+  '为什么': [
+    '这个问题问得很好！我们可以一起探讨一下。',
+    '理解"为什么"有助于加深记忆，我们来看看。',
+    '这是一个很好的思考，我们可以从多个角度来理解。'
+  ],
+  '什么意思': [
+    '我们来一起分析一下这句话的意思。',
+    '理解意思是背诵的第一步，我们可以慢慢来。',
+    '这句话的意思是...（根据上下文解释）'
+  ],
+  
+  // 情绪相关
+  '开心': [
+    '看到你开心我也很高兴！学习应该是快乐的。',
+    '开心学习效果更好，继续保持好心情！',
+    '为你感到高兴！学习有进步是最让人开心的事。'
+  ],
+  '沮丧': [
+    '别灰心，学习过程中有起伏是正常的。',
+    '感到沮丧时，可以想想你已经取得的进步。',
+    '每个人都会遇到困难，重要的是不放弃。'
+  ]
+};
+
+// 通用鼓励响应库
+const ENCOURAGEMENT_RESPONSES = [
+  '继续加油，你做得很好！',
+  '相信自己，你一定可以的！',
+  '慢慢来，不着急，我会一直陪着你。',
+  '每一次练习都是进步，继续努力！',
+  '你已经很棒了，继续保持！',
+  '学习需要耐心，你已经做得很好了！',
+  '看到你的进步，为你感到骄傲！',
+  '坚持就是胜利，你离成功越来越近了！',
+  '别怕犯错，错误是学习的好机会。',
+  '你的努力我看得到，继续加油！',
+  '学习是一个过程，享受这个过程很重要。',
+  '今天比昨天有进步，这就是成功！',
+  '你的坚持让我很感动，继续努力！',
+  '学习需要时间，给自己一点耐心。',
+  '你已经迈出了重要的一步，很棒！'
+];
+
+// 教学策略响应库
+const TEACHING_STRATEGIES = [
+  '我们可以试试分段记忆法：先记住第一句，再慢慢增加。',
+  '想象一下诗中的画面，这有助于理解和记忆。',
+  '可以尝试朗读几遍，培养语感会让记忆更自然。',
+  '把内容编成一个小故事，这样更容易记住。',
+  '注意押韵和节奏，这有助于回忆。',
+  '理解意思后再背诵，效果会更好。',
+  '可以尝试用手势或动作来帮助记忆。',
+  '把难记的部分写在纸上，多看几遍。',
+  '尝试用自己的话复述一遍，加深理解。',
+  '可以和朋友一起背诵，互相提醒。'
+];
+
 // 生成备用响应
 function generateFallbackResponse(message) {
-  // 简单的关键词匹配响应
-  if (message.includes('不会') || message.includes('难')) {
-    return '没关系，我们慢慢来。先理解意思，再一句句记忆。你觉得哪部分最难？';
+  const lowerMessage = message.toLowerCase();
+  
+  // 检查关键词匹配
+  for (const [keyword, responses] of Object.entries(KEYWORD_RESPONSES)) {
+    if (lowerMessage.includes(keyword.toLowerCase())) {
+      return responses[Math.floor(Math.random() * responses.length)];
+    }
   }
   
-  if (message.includes('提示') || message.includes('hint')) {
-    return '好的，让我给你一些提示。先从第一个字开始想...';
+  // 检查英文关键词
+  if (lowerMessage.includes('difficult') || lowerMessage.includes('hard')) {
+    return 'This part might be a bit challenging. Let\'s break it down into smaller pieces.';
   }
   
-  if (message.includes('背完了') || message.includes('完成了')) {
-    return '太棒了！你真的很努力！要继续保持哦~ 💪';
+  if (lowerMessage.includes('forget') || lowerMessage.includes('forgot')) {
+    return 'Forgetting is normal, it\'s a good time to review. Let\'s try again.';
   }
   
-  if (message.includes('累了') || message.includes('休息')) {
-    return '辛苦了！学习也要注意劳逸结合，休息一下再来吧~ 😊';
+  if (lowerMessage.includes('tired')) {
+    return 'It\'s important to take breaks. Rest for a while and come back refreshed.';
   }
   
-  // 默认鼓励响应
-  const responses = [
-    '继续加油，你做得很好！',
-    '相信自己，你一定可以的！',
-    '慢慢来，不着急，我会一直陪着你。',
-    '每一次练习都是进步，继续努力！'
-  ];
+  if (lowerMessage.includes('finished') || lowerMessage.includes('done')) {
+    return 'Great job! You\'ve completed the task. Keep up the good work!';
+  }
   
-  return responses[Math.floor(Math.random() * responses.length)];
+  // 根据消息长度和内容选择响应策略
+  if (message.length > 20) {
+    // 长消息可能是具体问题，提供教学策略
+    return TEACHING_STRATEGIES[Math.floor(Math.random() * TEACHING_STRATEGIES.length)];
+  } else if (message.includes('？') || message.includes('?')) {
+    // 问题类型
+    return '这个问题问得很好！我们可以一起探讨一下。';
+  } else {
+    // 短消息或陈述，使用鼓励响应
+    return ENCOURAGEMENT_RESPONSES[Math.floor(Math.random() * ENCOURAGEMENT_RESPONSES.length)];
+  }
 }
 
 // 分析差异
