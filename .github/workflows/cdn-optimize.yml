@@ -1,0 +1,76 @@
+name: CDN Optimize and Deploy
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  cdn-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Generate CDN URLs
+        id: cdn
+        run: |
+          # 为静态资源生成 jsDelivr CDN 链接
+          echo "静态资源CDN化:"
+          echo "styles.css -> https://cdn.jsdelivr.net/gh/stragy/RecitationRobot-helper@${{ github.sha }}/styles.css"
+          echo "js/ 目录 -> https://cdn.jsdelivr.net/gh/stragy/RecitationRobot-helper@${{ github.sha }}/js/"
+          echo "public/ 目录 -> https://cdn.jsdelivr.net/gh/stragy/RecitationRobot-helper@${{ github.sha }}/public/"
+          
+          # 生成部署信息文件
+          cat > cdn-info.json << EOF
+          {
+            "deployment_time": "$(date -Iseconds)",
+            "commit_sha": "${{ github.sha }}",
+            "cdn_base": "https://cdn.jsdelivr.net/gh/stragy/RecitationRobot-helper@${{ github.sha }}",
+            "pages_url": "https://stragy.github.io/RecitationRobot-helper",
+            "resources": {
+              "css": "https://cdn.jsdelivr.net/gh/stragy/RecitationRobot-helper@${{ github.sha }}/styles.css",
+              "js_modules": "https://cdn.jsdelivr.net/gh/stragy/RecitationRobot-helper@${{ github.sha }}/js/",
+              "public": "https://cdn.jsdelivr.net/gh/stragy/RecitationRobot-helper@${{ github.sha }}/public/"
+            }
+          }
+          EOF
+          
+          echo "CDN信息已生成"
+          cat cdn-info.json
+
+      - name: Create optimized HTML with CDN
+        run: |
+          # 创建使用CDN的HTML版本
+          cp index.html index-cdn.html
+          # 替换本地路径为CDN路径（简化示例）
+          sed -i 's|href="styles.css"|href="https://cdn.jsdelivr.net/gh/stragy/RecitationRobot-helper@${{ github.sha }}/styles.css"|g' index-cdn.html
+          sed -i 's|src="js/|src="https://cdn.jsdelivr.net/gh/stragy/RecitationRobot-helper@${{ github.sha }}/js/|g' index-cdn.html
+          echo "CDN优化版HTML已生成"
+
+      - name: Update README with deployment info
+        run: |
+          echo "## 🌐 部署状态" >> README.md
+          echo "" >> README.md
+          echo "### GitHub Pages" >> README.md
+          echo "- **地址**: https://stragy.github.io/RecitationRobot-helper" >> README.md
+          echo "- **状态**: ✅ 自动部署" >> README.md
+          echo "" >> README.md
+          echo "### CDN 加速" >> README.md
+          echo "- **jsDelivr CDN**: https://cdn.jsdelivr.net/gh/stragy/RecitationRobot-helper@${{ github.sha }}" >> README.md
+          echo "- **静态资源**: 已CDN化" >> README.md
+          echo "" >> README.md
+          echo "### 访问方式" >> README.md
+          echo "1. **直接访问**: https://stragy.github.io/RecitationRobot-helper" >> README.md
+          echo "2. **CDN优化版**: 使用 `index-cdn.html`" >> README.md
+          echo "" >> README.md
+          echo "> 最后部署: $(date '+%Y-%m-%d %H:%M:%S')" >> README.md
+          echo "> 提交: ${{ github.sha }}" >> README.md
+
+      - name: Commit and push changes
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add index-cdn.html cdn-info.json README.md
+          git commit -m "ci: 自动生成CDN优化版本 [skip ci]" || echo "没有变化需要提交"
+          git push origin main

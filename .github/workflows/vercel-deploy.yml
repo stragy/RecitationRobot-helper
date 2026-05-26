@@ -1,58 +1,46 @@
-name: Deploy to Vercel
+name: Deploy to GitHub Pages
 
 on:
   push:
     branches: [ main ]
-  pull_request:
-    branches: [ main ]
-  workflow_dispatch: # 允许手动触发
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
 
 jobs:
   deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - name: Setup Pages
+        uses: actions/configure-pages@v4
+
+      - name: Prepare static files
+        run: |
+          # 复制所有必要文件到部署目录
+          mkdir -p ./_site
+          cp -r index.html styles.css js/ public/ server/ ./
+          # 确保所有资源路径正确
+          echo "准备部署文件完成"
+          ls -la ./_site/
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
         with:
-          node-version: '18'
-          cache: 'npm'
+          path: './_site'
 
-      - name: Install Vercel CLI
-        run: npm install --global vercel@latest
-
-      - name: Pull Vercel Environment Information
-        run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
-
-      - name: Build Project
-        run: |
-          # 检查项目结构，确保可以部署
-          echo "项目文件列表:"
-          ls -la
-          echo "server目录:"
-          ls -la server/ || echo "server目录不存在"
-          # 对于纯静态项目，不需要build步骤
-          echo "准备部署..."
-
-      - name: Deploy to Vercel
-        run: vercel deploy --prod --token=${{ secrets.VERCEL_TOKEN }}
-        
-      - name: Get Deployment URL
+      - name: Deploy to GitHub Pages
         id: deployment
-        run: |
-          # 获取部署信息
-          DEPLOYMENT_INFO=$(vercel --token=${{ secrets.VERCEL_TOKEN }} --scope=${{ secrets.VERCEL_SCOPE }} --yes 2>&1 | grep -o "https://[a-zA-Z0-9.-]*\.vercel\.app" | head -1)
-          echo "DEPLOYMENT_URL=$DEPLOYMENT_INFO" >> $GITHUB_OUTPUT
-          echo "部署地址: $DEPLOYMENT_INFO"
-          
-      - name: Update README with deployment status
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        run: |
-          echo "## 🚀 在线演示" >> README.md
-          echo "" >> README.md
-          echo "**最新部署**: ${{ steps.deployment.outputs.DEPLOYMENT_URL }}" >> README.md
-          echo "" >> README.md
-          echo "> 部署时间: $(date '+%Y-%m-%d %H:%M:%S')" >> README.md
-          echo "> 触发提交: ${{ github.sha }}" >> README.md
+        uses: actions/deploy-pages@v4
